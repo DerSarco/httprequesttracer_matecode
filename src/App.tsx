@@ -56,6 +56,15 @@ function formatStartTime(unixMs: number | null): string {
   return new Date(unixMs).toLocaleString();
 }
 
+function formatRequestTimestamp(unixMs: number): string {
+  return new Date(unixMs).toLocaleTimeString([], {
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
 function toUserError(error: unknown): string {
   const raw = String(error ?? "").replace(/^Error:\s*/i, "").trim();
   if (!raw) return "Ocurrió un error inesperado.";
@@ -76,7 +85,7 @@ function toUserError(error: unknown): string {
   return raw;
 }
 
-export { DEFAULT_PROXY_HOST, DEFAULT_PROXY_PORT, formatStartTime, toUserError };
+export { DEFAULT_PROXY_HOST, DEFAULT_PROXY_PORT, formatStartTime, formatRequestTimestamp, toUserError };
 
 function App() {
   const [adbStatus, setAdbStatus] = useState<AdbStatus | null>(null);
@@ -139,15 +148,28 @@ function App() {
 
   async function loadCapturedRequests() {
     const requests = await invoke<CapturedExchange[]>("get_captured_requests");
-    setCapturedRequests(requests);
+    setCapturedRequests((previous) => {
+      const previousLastId = previous[previous.length - 1]?.id;
+      const nextLastId = requests[requests.length - 1]?.id;
+      const previousCount = previous.length;
+      const nextCount = requests.length;
 
-    if (!selectedRequestId && requests.length > 0) {
-      setSelectedRequestId(requests[requests.length - 1].id);
-    }
+      if (previousCount === nextCount && previousLastId === nextLastId) {
+        return previous;
+      }
 
-    if (selectedRequestId && !requests.some((request) => request.id === selectedRequestId)) {
-      setSelectedRequestId(requests.length > 0 ? requests[requests.length - 1].id : null);
-    }
+      return requests;
+    });
+
+    setSelectedRequestId((current) => {
+      if (!current && requests.length > 0) {
+        return requests[requests.length - 1].id;
+      }
+      if (current && !requests.some((request) => request.id === current)) {
+        return requests.length > 0 ? requests[requests.length - 1].id : null;
+      }
+      return current;
+    });
   }
 
   async function handleRefresh() {
@@ -262,10 +284,10 @@ function App() {
       loadCapturedRequests().catch(() => {
         // Polling should not break the UI interaction loop.
       });
-    }, 1200);
+    }, 800);
 
     return () => window.clearInterval(intervalId);
-  }, [session?.active, selectedRequestId]);
+  }, [session?.active]);
 
   return (
     <main className="app-shell">
@@ -403,7 +425,7 @@ function App() {
           <table>
             <thead>
               <tr>
-                <th>ID</th>
+                <th>Timestamp</th>
                 <th>Method</th>
                 <th>Host</th>
                 <th>Path</th>
@@ -425,7 +447,7 @@ function App() {
                   className={request.id === selectedRequestId ? "selected" : ""}
                   onClick={() => setSelectedRequestId(request.id)}
                 >
-                  <td>{request.id}</td>
+                  <td>{formatRequestTimestamp(request.startedAtUnixMs)}</td>
                   <td>{request.method}</td>
                   <td>{request.host || "-"}</td>
                   <td className="mono">{request.path}</td>
@@ -447,6 +469,10 @@ function App() {
               <li>
                 <span>URL</span>
                 <strong className="mono">{selectedRequest.url}</strong>
+              </li>
+              <li>
+                <span>Timestamp</span>
+                <strong>{formatRequestTimestamp(selectedRequest.startedAtUnixMs)}</strong>
               </li>
               <li>
                 <span>Status</span>
