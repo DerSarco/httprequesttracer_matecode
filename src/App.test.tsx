@@ -1,6 +1,6 @@
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import App, { formatStartTime, toUserError } from "./App";
+import App, { formatRequestTimestamp, formatStartTime, toUserError } from "./App";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -86,6 +86,16 @@ describe("utility helpers", () => {
     expect(formatStartTime(1700000000000)).toBe(new Date(1700000000000).toLocaleString());
   });
 
+  it("formats request timestamps for table display", () => {
+    expect(formatRequestTimestamp(1700000000000)).toBe(
+      new Date(1700000000000).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      }),
+    );
+  });
+
   it("normalizes errors for users", () => {
     expect(toUserError(null)).toBe("Ocurrió un error inesperado.");
     expect(toUserError(new Error("adb not found"))).toContain("No se encontró adb");
@@ -101,6 +111,7 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
+    expect(screen.getByRole("columnheader", { name: "Timestamp" })).toBeInTheDocument();
 
     const startButton = screen.getByRole("button", { name: "Start Tracing" });
     const stopButton = screen.getByRole("button", { name: "Stop Tracing" });
