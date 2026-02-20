@@ -261,6 +261,12 @@ tbody td {
   border-bottom: 1px solid #eef0eb;
 }
 
+thead th:first-child,
+tbody td:first-child {
+  white-space: nowrap;
+  min-width: 92px;
+}
+
 tbody tr {
   cursor: pointer;
 }
