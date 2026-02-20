@@ -47,6 +47,10 @@ let currentCapturedRequests: Array<{
   statusCode: number;
   requestHeaders: Array<{ name: string; value: string }>;
   responseHeaders: Array<{ name: string; value: string }>;
+  requestBody: string | null;
+  responseBody: string | null;
+  requestBodySize: number;
+  responseBodySize: number;
 }> = [];
 
 const invokeMock = invoke as InvokeMock;
@@ -144,6 +148,10 @@ describe("App", () => {
         statusCode: 200,
         requestHeaders: [{ name: "Accept", value: "application/json" }],
         responseHeaders: [{ name: "Content-Type", value: "application/json" }],
+        requestBody: "{\"hello\":\"world\"}",
+        responseBody: "{\"ok\":true}",
+        requestBodySize: 17,
+        responseBodySize: 11,
       },
     ];
 
@@ -151,6 +159,9 @@ describe("App", () => {
 
     expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
     expect(await screen.findByText("https://example.com/api")).toBeInTheDocument();
+    expect(screen.getByText("{\"hello\":\"world\"}")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Headers" }));
     expect(screen.getByText("Accept")).toBeInTheDocument();
     expect(screen.getAllByText("application/json")).toHaveLength(2);
   });

@@ -1,4 +1,5 @@
 use std::{
+    io::Read,
     net::SocketAddr,
     sync::{
         atomic::{AtomicU64, Ordering},
@@ -7,6 +8,9 @@ use std::{
     time::{Instant, SystemTime, UNIX_EPOCH},
 };
 
+use brotli::Decompressor;
+use flate2::read::{GzDecoder, ZlibDecoder};
+use http_body_util::{BodyExt, Full};
 use hudsucker::{
     certificate_authority::RcgenAuthority,
     hyper::{header::HeaderMap, Request, Response},
@@ -20,6 +24,7 @@ use tokio::sync::oneshot;
 use super::cert::CaBundlePaths;
 
 const DEFAULT_MAX_CAPTURED_REQUESTS: usize = 1_500;
+const MAX_BODY_PREVIEW_CHARS: usize = 24_000;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -41,6 +46,10 @@ pub struct CapturedExchange {
     pub status_code: u16,
     pub request_headers: Vec<HeaderEntry>,
     pub response_headers: Vec<HeaderEntry>,
+    pub request_body: Option<String>,
+    pub response_body: Option<String>,
+    pub request_body_size: u64,
+    pub response_body_size: u64,
 }
 
 #[derive(Debug, Default)]
@@ -152,8 +161,30 @@ impl HttpHandler for CaptureHandler {
         _ctx: &HttpContext,
         req: Request<Body>,
     ) -> RequestOrResponse {
+        let (parts, body) = req.into_parts();
+        let uri = parts.uri.clone();
+        let request_headers = collect_headers(&parts.headers);
+        let request_content_type = header_value(&parts.headers, "content-type");
+        let request_content_encoding = header_value(&parts.headers, "content-encoding");
+        let request_body_result = body.collect().await;
+        let method = parts.method.to_string();
+        let (request_body, request_body_preview, request_body_size) = match request_body_result {
+            Ok(collected) => {
+                let body_bytes = collected.to_bytes();
+                (
+                    Body::from(Full::new(body_bytes.clone())),
+                    render_body_preview(
+                        &body_bytes,
+                        request_content_type.as_deref(),
+                        request_content_encoding.as_deref(),
+                    ),
+                    body_bytes.len() as u64,
+                )
+            }
+            Err(_) => (Body::from(""), None, 0),
+        };
+
         let id = self.sequence.fetch_add(1, Ordering::Relaxed) + 1;
-        let uri = req.uri();
         let path = uri
             .path_and_query()
             .map(|value| value.as_str().to_string())
@@ -162,18 +193,44 @@ impl HttpHandler for CaptureHandler {
             id,
             started_at_unix_ms: now_unix_ms(),
             started_at_instant: Instant::now(),
-            method: req.method().to_string(),
+            method,
             url: uri.to_string(),
             host: uri.host().unwrap_or_default().to_string(),
             path,
-            request_headers: collect_headers(req.headers()),
+            request_headers,
+            request_body: request_body_preview,
+            request_body_size,
         };
 
         self.pending = Some(pending);
-        req.into()
+        Request::from_parts(parts, request_body).into()
     }
 
     async fn handle_response(&mut self, _ctx: &HttpContext, res: Response<Body>) -> Response<Body> {
+        let (parts, body) = res.into_parts();
+        let response_headers = collect_headers(&parts.headers);
+        let response_content_type = header_value(&parts.headers, "content-type");
+        let response_content_encoding = header_value(&parts.headers, "content-encoding");
+        let response_body_result = body.collect().await;
+        let (response_body_forward, response_body, response_body_size) = match response_body_result
+        {
+            Ok(collected) => {
+                let body_bytes = collected.to_bytes();
+                (
+                    Body::from(Full::new(body_bytes.clone())),
+                    render_body_preview(
+                        &body_bytes,
+                        response_content_type.as_deref(),
+                        response_content_encoding.as_deref(),
+                    ),
+                    body_bytes.len() as u64,
+                )
+            }
+            Err(_) => (Body::from(""), None, 0),
+        };
+        let status_code = parts.status.as_u16();
+        let response = Response::from_parts(parts, response_body_forward);
+
         if let Some(pending) = self.pending.take() {
             let captured = CapturedExchange {
                 id: pending.id,
@@ -183,9 +240,13 @@ impl HttpHandler for CaptureHandler {
                 url: pending.url,
                 host: pending.host,
                 path: pending.path,
-                status_code: res.status().as_u16(),
+                status_code,
                 request_headers: pending.request_headers,
-                response_headers: collect_headers(res.headers()),
+                response_headers,
+                request_body: pending.request_body,
+                response_body,
+                request_body_size: pending.request_body_size,
+                response_body_size,
             };
 
             if let Ok(mut store) = self.store.lock() {
@@ -193,7 +254,7 @@ impl HttpHandler for CaptureHandler {
             }
         }
 
-        res
+        response
     }
 }
 
@@ -207,6 +268,8 @@ struct PendingExchange {
     host: String,
     path: String,
     request_headers: Vec<HeaderEntry>,
+    request_body: Option<String>,
+    request_body_size: u64,
 }
 
 fn collect_headers(headers: &HeaderMap) -> Vec<HeaderEntry> {
@@ -217,6 +280,99 @@ fn collect_headers(headers: &HeaderMap) -> Vec<HeaderEntry> {
             value: String::from_utf8_lossy(value.as_bytes()).to_string(),
         })
         .collect()
+}
+
+fn header_value(headers: &HeaderMap, key: &'static str) -> Option<String> {
+    headers
+        .get(key)
+        .and_then(|value| value.to_str().ok())
+        .map(|value| value.to_string())
+}
+
+fn render_body_preview(
+    body: &[u8],
+    content_type: Option<&str>,
+    content_encoding: Option<&str>,
+) -> Option<String> {
+    if body.is_empty() {
+        return None;
+    }
+
+    let mut decoded_body: Option<Vec<u8>> = None;
+    if let Some(encoding) = normalized_content_encoding(content_encoding) {
+        if encoding != "identity" {
+            decoded_body = decode_content_encoding(body, &encoding);
+            if decoded_body.is_none() {
+                return Some(format!(
+                    "Body capturado ({} bytes) con content-encoding '{}', no fue posible decodificarlo.",
+                    body.len(),
+                    encoding
+                ));
+            }
+        }
+    }
+
+    let body_for_preview = decoded_body.as_deref().unwrap_or(body);
+
+    if !is_textual_content_type(body_for_preview, content_type) {
+        return None;
+    }
+
+    let body_text = String::from_utf8_lossy(body_for_preview);
+    let mut preview = body_text
+        .chars()
+        .take(MAX_BODY_PREVIEW_CHARS)
+        .collect::<String>();
+
+    if body_text.chars().count() > MAX_BODY_PREVIEW_CHARS {
+        preview.push_str("\n...[truncated]");
+    }
+
+    Some(preview)
+}
+
+fn is_textual_content_type(body: &[u8], content_type: Option<&str>) -> bool {
+    match content_type.map(|value| value.to_ascii_lowercase()) {
+        Some(value)
+            if value.starts_with("text/")
+                || value.contains("json")
+                || value.contains("xml")
+                || value.contains("javascript")
+                || value.contains("x-www-form-urlencoded")
+                || value.contains("graphql") =>
+        {
+            true
+        }
+        Some(_) => false,
+        None => std::str::from_utf8(body).is_ok(),
+    }
+}
+
+fn normalized_content_encoding(content_encoding: Option<&str>) -> Option<String> {
+    Some(
+        content_encoding?
+            .split(',')
+            .next()
+            .map(str::trim)
+            .unwrap_or_default()
+            .to_ascii_lowercase(),
+    )
+}
+
+fn decode_content_encoding(body: &[u8], encoding: &str) -> Option<Vec<u8>> {
+    let mut decoded = Vec::new();
+    let decode_result = match encoding {
+        "gzip" | "x-gzip" => GzDecoder::new(body).read_to_end(&mut decoded),
+        "deflate" => ZlibDecoder::new(body).read_to_end(&mut decoded),
+        "br" => Decompressor::new(body, 4096).read_to_end(&mut decoded),
+        _ => return None,
+    };
+
+    if decode_result.is_ok() {
+        return Some(decoded);
+    }
+
+    None
 }
 
 fn now_unix_ms() -> u64 {
