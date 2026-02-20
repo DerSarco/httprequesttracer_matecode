@@ -1638,7 +1638,10 @@ dependencies = [
 name = "http-request-tracer"
 version = "0.1.0"
 dependencies = [
+ "brotli",
  "dirs",
+ "flate2",
+ "http-body-util",
  "hudsucker",
  "serde",
  "serde_json",

@@ -39,6 +39,10 @@ type CapturedExchange = {
   statusCode: number;
   requestHeaders: HeaderEntry[];
   responseHeaders: HeaderEntry[];
+  requestBody: string | null;
+  responseBody: string | null;
+  requestBodySize: number;
+  responseBodySize: number;
 };
 
 type CertificateSetupResult = {
@@ -50,6 +54,8 @@ type CertificateSetupResult = {
 
 const DEFAULT_PROXY_HOST = "10.0.2.2";
 const DEFAULT_PROXY_PORT = "8877";
+const DETAIL_TABS = ["request", "response", "headers", "cookies", "params", "timing"] as const;
+type DetailTab = (typeof DETAIL_TABS)[number];
 
 function formatStartTime(unixMs: number | null): string {
   if (!unixMs) return "-";
@@ -87,11 +93,88 @@ function toUserError(error: unknown): string {
 
 export { DEFAULT_PROXY_HOST, DEFAULT_PROXY_PORT, formatStartTime, formatRequestTimestamp, toUserError };
 
+function formatByteSize(sizeInBytes: number): string {
+  if (sizeInBytes < 1024) return `${sizeInBytes} B`;
+  if (sizeInBytes < 1024 * 1024) return `${(sizeInBytes / 1024).toFixed(1)} KB`;
+  return `${(sizeInBytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function getHeaderValue(headers: HeaderEntry[], headerName: string): string | null {
+  const match = headers.find((header) => header.name.toLowerCase() === headerName.toLowerCase());
+  return match?.value ?? null;
+}
+
+function parseCookieEntries(selectedRequest: CapturedExchange): Array<{ source: "Request" | "Response"; name: string; value: string }> {
+  const entries: Array<{ source: "Request" | "Response"; name: string; value: string }> = [];
+  const requestCookieRaw = getHeaderValue(selectedRequest.requestHeaders, "cookie");
+
+  if (requestCookieRaw) {
+    requestCookieRaw
+      .split(";")
+      .map((entry) => entry.trim())
+      .filter(Boolean)
+      .forEach((entry) => {
+        const separatorIndex = entry.indexOf("=");
+        const name = separatorIndex >= 0 ? entry.slice(0, separatorIndex).trim() : entry;
+        const value = separatorIndex >= 0 ? entry.slice(separatorIndex + 1).trim() : "";
+        entries.push({ source: "Request", name, value });
+      });
+  }
+
+  selectedRequest.responseHeaders
+    .filter((header) => header.name.toLowerCase() === "set-cookie")
+    .forEach((header) => {
+      const cookieToken = header.value.split(";")[0]?.trim();
+      if (!cookieToken) return;
+      const separatorIndex = cookieToken.indexOf("=");
+      const name = separatorIndex >= 0 ? cookieToken.slice(0, separatorIndex).trim() : cookieToken;
+      const value = separatorIndex >= 0 ? cookieToken.slice(separatorIndex + 1).trim() : "";
+      entries.push({ source: "Response", name, value });
+    });
+
+  return entries;
+}
+
+function parseParamEntries(selectedRequest: CapturedExchange): Array<{ name: string; value: string }> {
+  const paramEntries: Array<{ name: string; value: string }> = [];
+  const pushParams = (search: string) => {
+    const params = new URLSearchParams(search);
+    params.forEach((value, name) => {
+      paramEntries.push({ name, value });
+    });
+  };
+
+  try {
+    const url = new URL(selectedRequest.url);
+    pushParams(url.search);
+  } catch {
+    const queryString = selectedRequest.path.includes("?") ? selectedRequest.path.slice(selectedRequest.path.indexOf("?")) : "";
+    if (queryString) {
+      pushParams(queryString);
+    }
+  }
+
+  return paramEntries;
+}
+
+function DetailBody({ body }: { body: string | null }) {
+  if (!body) {
+    return <p className="muted">No hay body textual disponible para esta captura.</p>;
+  }
+
+  return (
+    <pre className="body-preview">
+      <code>{body}</code>
+    </pre>
+  );
+}
+
 function App() {
   const [adbStatus, setAdbStatus] = useState<AdbStatus | null>(null);
   const [session, setSession] = useState<TraceSessionSnapshot | null>(null);
   const [capturedRequests, setCapturedRequests] = useState<CapturedExchange[]>([]);
   const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null);
+  const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>("request");
 
   const [selectedEmulator, setSelectedEmulator] = useState("");
   const [proxyHost, setProxyHost] = useState(DEFAULT_PROXY_HOST);
@@ -125,6 +208,14 @@ function App() {
   const selectedRequest = useMemo(
     () => capturedRequests.find((request) => request.id === selectedRequestId) ?? null,
     [capturedRequests, selectedRequestId]
+  );
+  const parsedCookies = useMemo(
+    () => (selectedRequest ? parseCookieEntries(selectedRequest) : []),
+    [selectedRequest]
+  );
+  const parsedParams = useMemo(
+    () => (selectedRequest ? parseParamEntries(selectedRequest) : []),
+    [selectedRequest]
   );
 
   async function loadSessionAndAdb() {
@@ -288,6 +379,10 @@ function App() {
 
     return () => window.clearInterval(intervalId);
   }, [session?.active]);
+
+  useEffect(() => {
+    setActiveDetailTab("request");
+  }, [selectedRequestId]);
 
   return (
     <main className="app-shell">
@@ -462,52 +557,150 @@ function App() {
 
       <section className="panel details-panel">
         <h2>Detalle de request</h2>
-        {!selectedRequest && <p className="muted">Selecciona una request para ver headers y metadata.</p>}
+        {!selectedRequest && <p className="muted">Selecciona una request para ver request, response y metadata.</p>}
         {selectedRequest && (
           <>
-            <ul className="metrics">
-              <li>
-                <span>URL</span>
-                <strong className="mono">{selectedRequest.url}</strong>
-              </li>
-              <li>
-                <span>Timestamp</span>
-                <strong>{formatRequestTimestamp(selectedRequest.startedAtUnixMs)}</strong>
-              </li>
-              <li>
+            <div className="detail-title-row">
+              <div>
+                <p className="detail-method">
+                  <strong>{selectedRequest.method}</strong> <span className="mono">{selectedRequest.path}</span>
+                </p>
+                <p className="detail-url mono">{selectedRequest.url}</p>
+              </div>
+              <div className="detail-status">
                 <span>Status</span>
                 <strong>{selectedRequest.statusCode}</strong>
-              </li>
-              <li>
-                <span>Duracion</span>
-                <strong>{selectedRequest.durationMs} ms</strong>
-              </li>
-            </ul>
-
-            <div className="headers-grid">
-              <div>
-                <h3>Request headers</h3>
-                <ul className="header-list">
-                  {selectedRequest.requestHeaders.map((header, index) => (
-                    <li key={`${header.name}-${index}`}>
-                      <span>{header.name}</span>
-                      <code>{header.value}</code>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-              <div>
-                <h3>Response headers</h3>
-                <ul className="header-list">
-                  {selectedRequest.responseHeaders.map((header, index) => (
-                    <li key={`${header.name}-${index}`}>
-                      <span>{header.name}</span>
-                      <code>{header.value}</code>
-                    </li>
-                  ))}
-                </ul>
               </div>
             </div>
+
+            <nav className="detail-tabs" aria-label="Request detail tabs">
+              {DETAIL_TABS.map((tab) => (
+                <button
+                  key={tab}
+                  type="button"
+                  className={activeDetailTab === tab ? "active" : ""}
+                  onClick={() => setActiveDetailTab(tab)}
+                >
+                  {tab[0].toUpperCase() + tab.slice(1)}
+                </button>
+              ))}
+            </nav>
+
+            {activeDetailTab === "request" && (
+              <section className="detail-block">
+                <div className="mini-metrics">
+                  <span>Request size: {formatByteSize(selectedRequest.requestBodySize)}</span>
+                  <span>Timestamp: {formatRequestTimestamp(selectedRequest.startedAtUnixMs)}</span>
+                </div>
+                <DetailBody body={selectedRequest.requestBody} />
+              </section>
+            )}
+
+            {activeDetailTab === "response" && (
+              <section className="detail-block">
+                <div className="mini-metrics">
+                  <span>Response size: {formatByteSize(selectedRequest.responseBodySize)}</span>
+                  <span>Duracion: {selectedRequest.durationMs} ms</span>
+                </div>
+                <DetailBody body={selectedRequest.responseBody} />
+              </section>
+            )}
+
+            {activeDetailTab === "headers" && (
+              <section className="headers-grid detail-block">
+                <div>
+                  <h3>Request headers</h3>
+                  <ul className="header-list">
+                    {selectedRequest.requestHeaders.length === 0 && (
+                      <li>
+                        <span>Sin headers</span>
+                        <code>-</code>
+                      </li>
+                    )}
+                    {selectedRequest.requestHeaders.map((header, index) => (
+                      <li key={`${header.name}-${index}`}>
+                        <span>{header.name}</span>
+                        <code>{header.value}</code>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div>
+                  <h3>Response headers</h3>
+                  <ul className="header-list">
+                    {selectedRequest.responseHeaders.length === 0 && (
+                      <li>
+                        <span>Sin headers</span>
+                        <code>-</code>
+                      </li>
+                    )}
+                    {selectedRequest.responseHeaders.map((header, index) => (
+                      <li key={`${header.name}-${index}`}>
+                        <span>{header.name}</span>
+                        <code>{header.value}</code>
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </section>
+            )}
+
+            {activeDetailTab === "cookies" && (
+              <section className="detail-block">
+                {parsedCookies.length === 0 && <p className="muted">No se detectaron cookies en request/response.</p>}
+                {parsedCookies.length > 0 && (
+                  <ul className="simple-list">
+                    {parsedCookies.map((cookie, index) => (
+                      <li key={`${cookie.source}-${cookie.name}-${index}`}>
+                        <span>{cookie.source}</span>
+                        <strong>{cookie.name}</strong>
+                        <code>{cookie.value}</code>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
+
+            {activeDetailTab === "params" && (
+              <section className="detail-block">
+                {parsedParams.length === 0 && <p className="muted">No se detectaron query params para esta request.</p>}
+                {parsedParams.length > 0 && (
+                  <ul className="simple-list">
+                    {parsedParams.map((param, index) => (
+                      <li key={`${param.name}-${index}`}>
+                        <span>Query</span>
+                        <strong>{param.name}</strong>
+                        <code>{param.value}</code>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </section>
+            )}
+
+            {activeDetailTab === "timing" && (
+              <section className="detail-block">
+                <ul className="metrics">
+                  <li>
+                    <span>Timestamp</span>
+                    <strong>{formatStartTime(selectedRequest.startedAtUnixMs)}</strong>
+                  </li>
+                  <li>
+                    <span>Duracion</span>
+                    <strong>{selectedRequest.durationMs} ms</strong>
+                  </li>
+                  <li>
+                    <span>Request body size</span>
+                    <strong>{formatByteSize(selectedRequest.requestBodySize)}</strong>
+                  </li>
+                  <li>
+                    <span>Response body size</span>
+                    <strong>{formatByteSize(selectedRequest.responseBodySize)}</strong>
+                  </li>
+                </ul>
+              </section>
+            )}
           </>
         )}
       </section>
