@@ -140,6 +140,6 @@ describe("App", () => {
     expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
     expect(await screen.findByText("https://example.com/api")).toBeInTheDocument();
     expect(screen.getByText("Accept")).toBeInTheDocument();
-    expect(screen.getByText("application/json")).toBeInTheDocument();
+    expect(screen.getAllByText("application/json")).toHaveLength(2);
   });
 });
