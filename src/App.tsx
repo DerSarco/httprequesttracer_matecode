@@ -169,12 +169,45 @@ function DetailBody({ body }: { body: string | null }) {
   );
 }
 
+function matchesStatusFilter(statusCode: number, rawFilter: string): boolean {
+  const filter = rawFilter.trim().toLowerCase();
+  if (!filter) return true;
+
+  if (/^\d{1,2}$/.test(filter)) {
+    return statusCode.toString().startsWith(filter);
+  }
+
+  if (/^\d{3}$/.test(filter)) {
+    return statusCode === Number(filter);
+  }
+
+  const rangeMatch = filter.match(/^(\d{1,3})\s*-\s*(\d{1,3})$/);
+  if (rangeMatch) {
+    const start = Number(rangeMatch[1]);
+    const end = Number(rangeMatch[2]);
+    const min = Math.min(start, end);
+    const max = Math.max(start, end);
+    return statusCode >= min && statusCode <= max;
+  }
+
+  const classMatch = filter.match(/^([1-5])xx$/);
+  if (classMatch) {
+    const prefix = Number(classMatch[1]) * 100;
+    return statusCode >= prefix && statusCode <= prefix + 99;
+  }
+
+  return true;
+}
+
 function App() {
   const [adbStatus, setAdbStatus] = useState<AdbStatus | null>(null);
   const [session, setSession] = useState<TraceSessionSnapshot | null>(null);
   const [capturedRequests, setCapturedRequests] = useState<CapturedExchange[]>([]);
   const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null);
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>("request");
+  const [searchFilter, setSearchFilter] = useState("");
+  const [methodFilter, setMethodFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("");
 
   const [selectedEmulator, setSelectedEmulator] = useState("");
   const [proxyHost, setProxyHost] = useState(DEFAULT_PROXY_HOST);
@@ -205,9 +238,28 @@ function App() {
     ]
   );
 
+  const availableMethods = useMemo(
+    () => [...new Set(capturedRequests.map((request) => request.method).filter(Boolean))].sort(),
+    [capturedRequests]
+  );
+
+  const filteredRequests = useMemo(() => {
+    const normalizedSearch = searchFilter.trim().toLowerCase();
+
+    return capturedRequests.filter((request) => {
+      const matchesText =
+        !normalizedSearch ||
+        request.host.toLowerCase().includes(normalizedSearch) ||
+        request.path.toLowerCase().includes(normalizedSearch);
+      const matchesMethod = methodFilter === "all" || request.method === methodFilter;
+      const matchesStatus = matchesStatusFilter(request.statusCode, statusFilter);
+      return matchesText && matchesMethod && matchesStatus;
+    });
+  }, [capturedRequests, methodFilter, searchFilter, statusFilter]);
+
   const selectedRequest = useMemo(
-    () => capturedRequests.find((request) => request.id === selectedRequestId) ?? null,
-    [capturedRequests, selectedRequestId]
+    () => filteredRequests.find((request) => request.id === selectedRequestId) ?? null,
+    [filteredRequests, selectedRequestId]
   );
   const parsedCookies = useMemo(
     () => (selectedRequest ? parseCookieEntries(selectedRequest) : []),
@@ -384,6 +436,25 @@ function App() {
     setActiveDetailTab("request");
   }, [selectedRequestId]);
 
+  useEffect(() => {
+    setSelectedRequestId((current) => {
+      if (filteredRequests.length === 0) return null;
+      if (current && filteredRequests.some((request) => request.id === current)) {
+        return current;
+      }
+      return filteredRequests[filteredRequests.length - 1].id;
+    });
+  }, [filteredRequests]);
+
+  const hasActiveFilters =
+    searchFilter.trim().length > 0 || methodFilter !== "all" || statusFilter.trim().length > 0;
+
+  function clearFilters() {
+    setSearchFilter("");
+    setMethodFilter("all");
+    setStatusFilter("");
+  }
+
   return (
     <main className="app-shell">
       <header className="app-header">
@@ -511,9 +582,41 @@ function App() {
 
       <section className="panel traffic-panel">
         <div className="traffic-header">
-          <h2>Requests capturadas ({capturedRequests.length})</h2>
+          <h2>
+            Requests capturadas ({filteredRequests.length}
+            {hasActiveFilters ? ` de ${capturedRequests.length}` : ""})
+          </h2>
           <button onClick={handleClearCapturedRequests} disabled={busy || capturedRequests.length === 0}>
             Clear Session
+          </button>
+        </div>
+        <div className="filters-row">
+          <input
+            value={searchFilter}
+            onChange={(event) => setSearchFilter(event.target.value)}
+            placeholder="Buscar por host o path"
+            aria-label="Filtro texto host/path"
+          />
+          <select
+            value={methodFilter}
+            onChange={(event) => setMethodFilter(event.target.value)}
+            aria-label="Filtro metodo HTTP"
+          >
+            <option value="all">Todos los metodos</option>
+            {availableMethods.map((method) => (
+              <option key={method} value={method}>
+                {method}
+              </option>
+            ))}
+          </select>
+          <input
+            value={statusFilter}
+            onChange={(event) => setStatusFilter(event.target.value)}
+            placeholder="Status: 200, 2xx, 400-499"
+            aria-label="Filtro status code"
+          />
+          <button onClick={clearFilters} disabled={!hasActiveFilters}>
+            Limpiar filtros
           </button>
         </div>
         <div className="table-scroll">
@@ -529,14 +632,16 @@ function App() {
               </tr>
             </thead>
             <tbody>
-              {capturedRequests.length === 0 && (
+              {filteredRequests.length === 0 && (
                 <tr>
                   <td colSpan={6} className="empty">
-                    Sin trafico capturado aun.
+                    {capturedRequests.length === 0
+                      ? "Sin trafico capturado aun."
+                      : "No hay resultados para los filtros actuales."}
                   </td>
                 </tr>
               )}
-              {capturedRequests.map((request) => (
+              {filteredRequests.map((request) => (
                 <tr
                   key={request.id}
                   className={request.id === selectedRequestId ? "selected" : ""}
