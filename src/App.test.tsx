@@ -165,4 +165,58 @@ describe("App", () => {
     expect(screen.getByText("Accept")).toBeInTheDocument();
     expect(screen.getAllByText("application/json")).toHaveLength(2);
   });
+
+  it("applies combined filters and allows clearing them", async () => {
+    currentCapturedRequests = [
+      {
+        id: 201,
+        startedAtUnixMs: 1700000001000,
+        durationMs: 120,
+        method: "GET",
+        url: "https://example.com/api/users?page=1",
+        host: "example.com",
+        path: "/api/users?page=1",
+        statusCode: 200,
+        requestHeaders: [{ name: "Accept", value: "application/json" }],
+        responseHeaders: [{ name: "Content-Type", value: "application/json" }],
+        requestBody: null,
+        responseBody: "{\"users\":[]}",
+        requestBodySize: 0,
+        responseBodySize: 12,
+      },
+      {
+        id: 202,
+        startedAtUnixMs: 1700000002000,
+        durationMs: 220,
+        method: "POST",
+        url: "https://auth.example.com/login",
+        host: "auth.example.com",
+        path: "/login",
+        statusCode: 401,
+        requestHeaders: [{ name: "Content-Type", value: "application/json" }],
+        responseHeaders: [{ name: "Content-Type", value: "application/json" }],
+        requestBody: "{\"email\":\"x@y.com\"}",
+        responseBody: "{\"error\":\"unauthorized\"}",
+        requestBodySize: 19,
+        responseBodySize: 24,
+      },
+    ];
+
+    render(<App />);
+    expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
+    expect(screen.getByText("example.com")).toBeInTheDocument();
+    expect(screen.getByText("auth.example.com")).toBeInTheDocument();
+
+    await userEvent.type(screen.getByLabelText("Filtro texto host/path"), "auth");
+    expect(screen.queryByText("example.com")).not.toBeInTheDocument();
+    expect(screen.getByText("auth.example.com")).toBeInTheDocument();
+
+    await userEvent.selectOptions(screen.getByLabelText("Filtro metodo HTTP"), "POST");
+    await userEvent.type(screen.getByLabelText("Filtro status code"), "401");
+    expect(screen.getByText("auth.example.com")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Limpiar filtros" }));
+    expect(screen.getByText("example.com")).toBeInTheDocument();
+    expect(screen.getByText("auth.example.com")).toBeInTheDocument();
+  });
 });
