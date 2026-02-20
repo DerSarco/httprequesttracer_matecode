@@ -84,6 +84,31 @@ pub fn ensure_adb_available() -> Result<(), String> {
     Ok(())
 }
 
+pub fn ensure_emulator_online(serial: &str) -> Result<(), String> {
+    let serial = serial.trim();
+    if serial.is_empty() {
+        return Err("No emulator selected.".to_string());
+    }
+
+    let adb_binary = resolve_adb_binary()?;
+    let devices = list_devices(&adb_binary)?;
+
+    match devices.into_iter().find(|device| device.serial == serial) {
+        Some(device) if device.status == "device" => Ok(()),
+        Some(device) if device.status == "offline" => Err(
+            "Selected emulator is offline. Run `adb reconnect offline` and wait until it is online."
+                .to_string(),
+        ),
+        Some(device) => Err(format!(
+            "Selected emulator is not ready (status: {}). Wait for full boot and try again.",
+            device.status
+        )),
+        None => Err(
+            "Selected emulator is not connected. Verify it appears in `adb devices`.".to_string(),
+        ),
+    }
+}
+
 pub fn set_emulator_proxy(serial: &str, proxy_address: &str) -> Result<(), String> {
     run_adb(&[
         "-s",
@@ -162,26 +187,34 @@ pub fn launch_certificate_installer(serial: &str, remote_path: &str) -> Result<(
 }
 
 fn list_emulators(adb_binary: &str) -> Result<(Vec<EmulatorDevice>, usize), String> {
-    let output = run_adb_with_binary(adb_binary, &["devices"])?;
+    let devices = list_devices(adb_binary)?;
     let mut online_emulators = Vec::new();
     let mut offline_emulator_count = 0usize;
 
-    for line in output.lines().skip(1) {
-        if let Some(entry) = parse_device_line(line) {
-            if !entry.serial.starts_with("emulator-") {
-                continue;
-            }
-            if entry.status == "device" {
-                online_emulators.push(EmulatorDevice {
-                    serial: entry.serial,
-                });
-            } else if entry.status == "offline" {
-                offline_emulator_count += 1;
-            }
+    for entry in devices {
+        if !entry.serial.starts_with("emulator-") {
+            continue;
+        }
+
+        if entry.status == "device" {
+            online_emulators.push(EmulatorDevice {
+                serial: entry.serial,
+            });
+        } else if entry.status == "offline" {
+            offline_emulator_count += 1;
         }
     }
 
     Ok((online_emulators, offline_emulator_count))
+}
+
+fn list_devices(adb_binary: &str) -> Result<Vec<DeviceEntry>, String> {
+    let output = run_adb_with_binary(adb_binary, &["devices"])?;
+    Ok(output
+        .lines()
+        .skip(1)
+        .filter_map(parse_device_line)
+        .collect())
 }
 
 fn run_adb(args: &[&str]) -> Result<String, String> {

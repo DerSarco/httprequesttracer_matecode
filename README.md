@@ -63,3 +63,7 @@ The bundle output is generated under:
 
 - `docs/spike-05-tls-pinning-trust-model.md`
 - `docs/spike-06-performance-baseline.md`
+
+## MVP docs
+
+- `docs/mvp-01-configuracion-preferencias.md`

@@ -56,6 +56,28 @@ function formatStartTime(unixMs: number | null): string {
   return new Date(unixMs).toLocaleString();
 }
 
+function toUserError(error: unknown): string {
+  const raw = String(error ?? "").replace(/^Error:\s*/i, "").trim();
+  if (!raw) return "Ocurrió un error inesperado.";
+
+  if (raw.includes("adb not found")) {
+    return "No se encontró adb. Instala Android platform-tools o define ADB_PATH con la ruta del binario.";
+  }
+  if (raw.includes("offline")) {
+    return `${raw} Sugerencia: ejecuta \`adb reconnect offline\` y espera a que el emulador aparezca como \`device\`.`;
+  }
+  if (raw.includes("Failed to bind local proxy") || raw.includes("address already in use")) {
+    return `${raw} Sugerencia: cambia el puerto de proxy en la UI y vuelve a intentar.`;
+  }
+  if (raw.includes("cannot connect to daemon")) {
+    return `${raw} Sugerencia: ejecuta \`adb start-server\` y luego Refresh.`;
+  }
+
+  return raw;
+}
+
+export { DEFAULT_PROXY_HOST, DEFAULT_PROXY_PORT, formatStartTime, toUserError };
+
 function App() {
   const [adbStatus, setAdbStatus] = useState<AdbStatus | null>(null);
   const [session, setSession] = useState<TraceSessionSnapshot | null>(null);
@@ -131,11 +153,13 @@ function App() {
   async function handleRefresh() {
     setBusy(true);
     setErrorText(null);
+    setInfoText("Actualizando estado...");
     try {
       await Promise.all([loadSessionAndAdb(), loadCapturedRequests()]);
       setInfoText("Estado actualizado.");
     } catch (error) {
-      setErrorText(String(error));
+      setErrorText(toUserError(error));
+      setInfoText(null);
     } finally {
       setBusy(false);
     }
@@ -149,7 +173,7 @@ function App() {
 
     setBusy(true);
     setErrorText(null);
-    setInfoText(null);
+    setInfoText("Iniciando tracing...");
 
     try {
       const nextSession = await invoke<TraceSessionSnapshot>("start_tracing", {
@@ -160,7 +184,9 @@ function App() {
       setSession(nextSession);
       setInfoText("Tracing iniciado. Proxy local y MITM activos.");
     } catch (error) {
-      setErrorText(String(error));
+      setErrorText(toUserError(error));
+      setInfoText(null);
+      await loadSessionAndAdb().catch(() => undefined);
     } finally {
       setBusy(false);
     }
@@ -169,13 +195,15 @@ function App() {
   async function handleStopTracing() {
     setBusy(true);
     setErrorText(null);
+    setInfoText("Deteniendo tracing...");
 
     try {
       const nextSession = await invoke<TraceSessionSnapshot>("stop_tracing");
       setSession(nextSession);
       setInfoText("Tracing detenido. Proxy removido del emulador.");
     } catch (error) {
-      setErrorText(String(error));
+      setErrorText(toUserError(error));
+      setInfoText(null);
     } finally {
       setBusy(false);
     }
@@ -189,6 +217,7 @@ function App() {
 
     setBusy(true);
     setErrorText(null);
+    setInfoText("Preparando certificado...");
     setCertInfoText(null);
     try {
       const result = await invoke<CertificateSetupResult>("prepare_certificate_install", {
@@ -199,7 +228,8 @@ function App() {
       );
       await loadSessionAndAdb();
     } catch (error) {
-      setErrorText(String(error));
+      setErrorText(toUserError(error));
+      setInfoText(null);
     } finally {
       setBusy(false);
     }
@@ -207,13 +237,15 @@ function App() {
 
   async function handleClearCapturedRequests() {
     setBusy(true);
+    setErrorText(null);
     try {
       await invoke("clear_captured_requests");
       setCapturedRequests([]);
       setSelectedRequestId(null);
       setInfoText("Sesion de requests limpiada.");
     } catch (error) {
-      setErrorText(String(error));
+      setErrorText(toUserError(error));
+      setInfoText(null);
     } finally {
       setBusy(false);
     }

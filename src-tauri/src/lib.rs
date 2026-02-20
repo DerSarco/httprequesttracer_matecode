@@ -92,6 +92,9 @@ async fn start_tracing(
     if emulator_serial.trim().is_empty() {
         return Err("Select an emulator before starting tracing".to_string());
     }
+    if proxy_port == 0 {
+        return Err("Proxy port must be between 1 and 65535".to_string());
+    }
 
     let proxy_host = proxy_host.trim();
     if proxy_host.is_empty() {
@@ -109,7 +112,16 @@ async fn start_tracing(
     }
 
     tracer::adb::ensure_adb_available()?;
+    tracer::adb::ensure_emulator_online(&emulator_serial)?;
     let ca_bundle = tracer::cert::ensure_ca_bundle()?;
+
+    {
+        let mut session = state
+            .session
+            .lock()
+            .map_err(|_| "Unable to access tracing state".to_string())?;
+        session.last_error = None;
+    }
 
     {
         let mut store = state
@@ -148,6 +160,11 @@ async fn start_tracing(
 
     let proxy_address = format!("{proxy_host}:{proxy_port}");
     if let Err(err) = tracer::adb::set_emulator_proxy(&emulator_serial, &proxy_address) {
+        let mut rollback_notes = Vec::new();
+        if let Err(clear_err) = tracer::adb::clear_emulator_proxy(&emulator_serial) {
+            rollback_notes.push(format!("proxy rollback warning: {clear_err}"));
+        }
+
         let runtime_to_stop = state
             .proxy_runtime
             .lock()
@@ -155,8 +172,31 @@ async fn start_tracing(
             .and_then(|mut guard| guard.take());
         if let Some(runtime) = runtime_to_stop {
             runtime.stop().await;
+        } else {
+            rollback_notes.push("local proxy runtime was already stopped".to_string());
         }
-        return Err(err);
+
+        if let Ok(mut session) = state.session.lock() {
+            session.stop();
+            session.last_error = if rollback_notes.is_empty() {
+                Some("Start failed and rollback was applied.".to_string())
+            } else {
+                Some(format!(
+                    "Start failed and rollback completed with warnings: {}",
+                    rollback_notes.join(" | ")
+                ))
+            };
+        }
+
+        if rollback_notes.is_empty() {
+            return Err(format!(
+                "Unable to apply emulator proxy: {err}. Tracing was not started."
+            ));
+        }
+        return Err(format!(
+            "Unable to apply emulator proxy: {err}. Rollback completed with warnings: {}",
+            rollback_notes.join(" | ")
+        ));
     }
 
     let mut session = state
@@ -197,7 +237,9 @@ async fn stop_tracing(state: State<'_, AppState>) -> Result<TraceSessionSnapshot
     let mut clear_proxy_error = None;
     if let Some(emulator_serial) = emulator_serial {
         if let Err(err) = tracer::adb::clear_emulator_proxy(&emulator_serial) {
-            clear_proxy_error = Some(err);
+            clear_proxy_error = Some(format!(
+                "Tracing stopped locally, but failed to clear emulator proxy: {err}"
+            ));
         }
     }
 
