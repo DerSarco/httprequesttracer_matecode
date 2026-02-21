@@ -219,4 +219,35 @@ describe("App", () => {
     expect(screen.getByText("example.com")).toBeInTheDocument();
     expect(screen.getByText("auth.example.com")).toBeInTheDocument();
   });
+
+  it("clears captured session from UI when clicking Clear Session", async () => {
+    currentCapturedRequests = [
+      {
+        id: 301,
+        startedAtUnixMs: 1700000003000,
+        durationMs: 90,
+        method: "GET",
+        url: "https://clear.example.com",
+        host: "clear.example.com",
+        path: "/",
+        statusCode: 200,
+        requestHeaders: [],
+        responseHeaders: [],
+        requestBody: null,
+        responseBody: "{\"ok\":true}",
+        requestBodySize: 0,
+        responseBodySize: 11,
+      },
+    ];
+
+    render(<App />);
+    expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
+    expect(screen.getByText("clear.example.com")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Clear Session" }));
+
+    expect(await screen.findByText("Sesion de requests limpiada.")).toBeInTheDocument();
+    expect(screen.queryByText("clear.example.com")).not.toBeInTheDocument();
+    expect(screen.getByText("Sin trafico capturado aun.")).toBeInTheDocument();
+  });
 });
