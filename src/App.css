@@ -434,6 +434,9 @@ h3 {
 
 .interception-rules {
   margin-top: 12px;
+  max-height: min(55vh, 520px);
+  overflow: auto;
+  padding-right: 2px;
 }
 
 .rule-row {
@@ -464,11 +467,63 @@ h3 {
   align-self: flex-start;
 }
 
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: rgba(10, 16, 12, 0.56);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}
+
+.modal-panel {
+  width: min(100%, 1060px);
+  max-height: calc(100vh - 40px);
+  overflow: auto;
+  border-radius: 16px;
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow);
+  background: var(--surface);
+  padding: 16px;
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.modal-actions {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
 .interception-grid {
   margin-top: 12px;
   display: grid;
   grid-template-columns: 0.95fr 1.05fr;
   gap: 14px;
+  align-items: stretch;
+}
+
+.pending-list,
+.intercept-editor {
+  min-height: 460px;
+  display: flex;
+  flex-direction: column;
+}
+
+.pending-list .muted {
+  margin: 0;
+}
+
+.pending-list .simple-list {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
 }
 
 .pending-list .simple-list li {
@@ -491,6 +546,17 @@ h3 {
   display: grid;
   grid-template-columns: 0.6fr 1.4fr;
   gap: 10px;
+}
+
+.intercept-editor-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-right: 2px;
+}
+
+.intercept-editor-content .muted {
+  margin: 0;
 }
 
 .traffic-panel {
@@ -838,6 +904,11 @@ td.empty {
     grid-template-columns: 1fr;
   }
 
+  .pending-list,
+  .intercept-editor {
+    min-height: 340px;
+  }
+
   .input-grid,
   .settings-panel .settings-grid,
   .filters-row,
@@ -866,5 +937,9 @@ td.empty {
   .header-list li,
   .simple-list li {
     grid-template-columns: 1fr;
+  }
+
+  .modal-backdrop {
+    padding: 12px;
   }
 }
