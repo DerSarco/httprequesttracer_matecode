@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;
   --bg: #f2f4f1;
   --surface: #fbfcf9;
   --surface-alt: #ffffff;
@@ -10,38 +11,21 @@
   --danger: #a73131;
   --warning: #9e6c1d;
   --info: #245d9f;
+  --bg-accent-top: rgba(162, 201, 154, 0.4);
+  --bg-accent-bottom: rgba(194, 216, 186, 0.35);
+  --table-head-bg: rgba(151, 179, 152, 0.15);
+  --table-row-border: rgba(198, 210, 200, 0.4);
+  --row-hover-bg: rgba(196, 224, 204, 0.25);
+  --row-selected-bg: rgba(168, 214, 181, 0.35);
+  --pending-selected-bg: rgba(185, 220, 194, 0.55);
   --shadow: 0 14px 30px rgba(31, 40, 32, 0.08);
 }
 
-* {
-  box-sizing: border-box;
-}
-
-body {
-  margin: 0;
-  min-height: 100vh;
-  color: var(--text);
-  background:
-    radial-gradient(circle at 0% 0%, rgba(162, 201, 154, 0.4), transparent 38%),
-    radial-gradient(circle at 100% 100%, rgba(194, 216, 186, 0.35), transparent 42%),
-    var(--bg);
-  font-family: "Avenir Next", "Segoe UI", sans-serif;
-}
-
-#root {
-  min-height: 100vh;
-}
-
-.app-shell {
-  max-width: 1220px;
-  margin: 0 auto;
-  padding: 36px 24px 48px;
-}
-
-.app-shell.theme-dark {
-  --bg: #1a221d;
-  --surface: #222d26;
-  --surface-alt: #27352d;
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #111813;
+  --surface: #1a241d;
+  --surface-alt: #223026;
   --border: #324238;
   --text: #ebf4ec;
   --muted: #b7c7b8;
@@ -50,7 +34,50 @@ body {
   --danger: #ff8a8a;
   --warning: #f3c15d;
   --info: #7cb7ff;
-  --shadow: 0 14px 30px rgba(0, 0, 0, 0.25);
+  --bg-accent-top: rgba(38, 78, 57, 0.45);
+  --bg-accent-bottom: rgba(20, 38, 30, 0.6);
+  --table-head-bg: rgba(104, 145, 121, 0.22);
+  --table-row-border: rgba(72, 95, 78, 0.62);
+  --row-hover-bg: rgba(108, 156, 126, 0.2);
+  --row-selected-bg: rgba(124, 184, 147, 0.28);
+  --pending-selected-bg: rgba(128, 178, 143, 0.35);
+  --shadow: 0 14px 30px rgba(0, 0, 0, 0.35);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  min-height: 100%;
+}
+
+html {
+  background: var(--bg);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  color: var(--text);
+  background:
+    radial-gradient(circle at 0% 0%, var(--bg-accent-top), transparent 38%),
+    radial-gradient(circle at 100% 100%, var(--bg-accent-bottom), transparent 42%),
+    var(--bg);
+  font-family: "Avenir Next", "Segoe UI", sans-serif;
+}
+
+#root {
+  min-height: 100vh;
+  color: var(--text);
+}
+
+.app-shell {
+  max-width: 1220px;
+  margin: 0 auto;
+  padding: 36px 24px 48px;
 }
 
 .app-shell.font-small {
@@ -312,6 +339,7 @@ h3 {
 .metrics strong {
   font-weight: 700;
   text-align: right;
+  color: var(--text);
 }
 
 .mono {
@@ -342,6 +370,38 @@ h3 {
   min-width: 150px;
 }
 
+.interception-rules {
+  margin-top: 12px;
+}
+
+.rule-row {
+  display: grid;
+  grid-template-columns: 120px 1fr 1fr 170px auto;
+  gap: 10px;
+  align-items: end;
+  margin-bottom: 10px;
+}
+
+.rule-row:last-child {
+  margin-bottom: 0;
+}
+
+.rule-row > * {
+  min-width: 0;
+}
+
+.rule-toggle {
+  align-self: stretch;
+  justify-content: center;
+}
+
+.rule-toggle input[type="checkbox"] {
+  width: 18px;
+  height: 18px;
+  min-width: 18px;
+  align-self: flex-start;
+}
+
 .interception-grid {
   margin-top: 12px;
   display: grid;
@@ -361,7 +421,8 @@ h3 {
 }
 
 .selected-item {
-  background: #e2f0e6;
+  background: var(--pending-selected-bg);
+  color: var(--text);
 }
 
 .intercept-editor .editor-grid {
@@ -402,21 +463,24 @@ table {
   border-collapse: collapse;
   font-size: 0.87rem;
   table-layout: fixed;
+  color: var(--text);
 }
 
 thead th {
   text-align: left;
   padding: 10px;
-  background: rgba(151, 179, 152, 0.15);
+  background: var(--table-head-bg);
   border-bottom: 1px solid var(--border);
   position: sticky;
   top: 0;
+  color: var(--text);
 }
 
 tbody td {
   padding: 9px 10px;
-  border-bottom: 1px solid rgba(198, 210, 200, 0.4);
+  border-bottom: 1px solid var(--table-row-border);
   min-width: 0;
+  color: var(--text);
 }
 
 thead th:first-child,
@@ -425,20 +489,37 @@ tbody td:first-child {
   min-width: 92px;
 }
 
+thead th:nth-child(1) {
+  width: 104px;
+}
+
+thead th:nth-child(2) {
+  width: 82px;
+}
+
+thead th:nth-child(5) {
+  width: 76px;
+}
+
+thead th:nth-child(6) {
+  width: 96px;
+}
+
 tbody tr {
   cursor: pointer;
 }
 
 tbody tr:hover {
-  background: rgba(196, 224, 204, 0.25);
+  background: var(--row-hover-bg);
 }
 
 tbody tr.selected {
-  background: rgba(168, 214, 181, 0.35);
+  background: var(--row-selected-bg);
 }
 
 .host-cell,
 .path-cell {
+  max-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -574,7 +655,7 @@ td.empty {
   overflow: auto;
   border: 1px solid var(--border);
   border-radius: 10px;
-  background: rgba(151, 179, 152, 0.1);
+  background: var(--table-head-bg);
   padding: 10px;
 }
 
@@ -582,8 +663,10 @@ td.empty {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.8rem;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
   line-height: 1.35;
+  color: var(--text);
 }
 
 .headers-grid {
@@ -609,7 +692,11 @@ td.empty {
   grid-template-columns: 180px 1fr;
   gap: 10px;
   padding: 9px 10px;
-  border-bottom: 1px solid rgba(198, 210, 200, 0.4);
+  border-bottom: 1px solid var(--table-row-border);
+}
+
+.header-list li > * {
+  min-width: 0;
 }
 
 .header-list li:last-child {
@@ -624,8 +711,12 @@ td.empty {
 .header-list code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.79rem;
+  display: block;
+  min-width: 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
+  color: var(--text);
 }
 
 .simple-list {
@@ -645,7 +736,11 @@ td.empty {
   gap: 8px;
   align-items: center;
   padding: 9px 10px;
-  border-bottom: 1px solid rgba(198, 210, 200, 0.4);
+  border-bottom: 1px solid var(--table-row-border);
+}
+
+.simple-list li > * {
+  min-width: 0;
 }
 
 .simple-list li:last-child {
@@ -661,13 +756,18 @@ td.empty {
 
 .simple-list strong {
   font-size: 0.86rem;
+  color: var(--text);
 }
 
 .simple-list code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.78rem;
+  display: block;
+  min-width: 0;
   white-space: pre-wrap;
+  overflow-wrap: anywhere;
   word-break: break-word;
+  color: var(--text);
 }
 
 @media (max-width: 1100px) {
@@ -679,7 +779,8 @@ td.empty {
   .input-grid,
   .settings-panel .settings-grid,
   .filters-row,
-  .intercept-editor .editor-grid {
+  .intercept-editor .editor-grid,
+  .rule-row {
     grid-template-columns: 1fr;
   }
 

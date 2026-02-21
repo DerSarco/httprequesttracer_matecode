@@ -86,11 +86,19 @@ pub struct PendingInterceptRequest {
 pub struct InterceptionSnapshot {
     pub enabled: bool,
     pub timeout_ms: u64,
-    pub host_filter: String,
-    pub path_filter: String,
-    pub method_filter: String,
+    pub rules: Vec<InterceptionRule>,
     pub pending_count: usize,
     pub pending_requests: Vec<PendingInterceptRequest>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct InterceptionRule {
+    pub id: String,
+    pub enabled: bool,
+    pub host_contains: String,
+    pub path_contains: String,
+    pub method: String,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -98,9 +106,7 @@ pub struct InterceptionSnapshot {
 pub struct InterceptionConfigInput {
     pub enabled: bool,
     pub timeout_ms: Option<u64>,
-    pub host_filter: Option<String>,
-    pub path_filter: Option<String>,
-    pub method_filter: Option<String>,
+    pub rules: Option<Vec<InterceptionRule>>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -147,9 +153,7 @@ struct PendingInterceptInternal {
 pub struct InterceptionController {
     enabled: bool,
     timeout_ms: u64,
-    host_filter: String,
-    path_filter: String,
-    method_filter: String,
+    rules: Vec<InterceptionRule>,
     pending_order: VecDeque<u64>,
     pending: HashMap<u64, PendingInterceptInternal>,
 }
@@ -159,9 +163,7 @@ impl Default for InterceptionController {
         Self {
             enabled: false,
             timeout_ms: DEFAULT_INTERCEPT_TIMEOUT_MS,
-            host_filter: String::new(),
-            path_filter: String::new(),
-            method_filter: String::new(),
+            rules: Vec::new(),
             pending_order: VecDeque::new(),
             pending: HashMap::new(),
         }
@@ -179,9 +181,7 @@ impl InterceptionController {
         InterceptionSnapshot {
             enabled: self.enabled,
             timeout_ms: self.timeout_ms,
-            host_filter: self.host_filter.clone(),
-            path_filter: self.path_filter.clone(),
-            method_filter: self.method_filter.clone(),
+            rules: self.rules.clone(),
             pending_count: pending_requests.len(),
             pending_requests,
         }
@@ -192,14 +192,13 @@ impl InterceptionController {
         if let Some(timeout_ms) = input.timeout_ms {
             self.timeout_ms = timeout_ms.clamp(MIN_INTERCEPT_TIMEOUT_MS, MAX_INTERCEPT_TIMEOUT_MS);
         }
-        if let Some(host_filter) = input.host_filter {
-            self.host_filter = host_filter.trim().to_ascii_lowercase();
-        }
-        if let Some(path_filter) = input.path_filter {
-            self.path_filter = path_filter.trim().to_ascii_lowercase();
-        }
-        if let Some(method_filter) = input.method_filter {
-            self.method_filter = method_filter.trim().to_ascii_uppercase();
+        if let Some(rules) = input.rules {
+            self.rules = rules
+                .into_iter()
+                .map(normalize_rule)
+                .filter(|rule| !rule.id.trim().is_empty())
+                .take(64)
+                .collect();
         }
         self.snapshot()
     }
@@ -235,19 +234,33 @@ impl InterceptionController {
             return false;
         }
 
-        if !self.host_filter.is_empty() && !host.to_ascii_lowercase().contains(&self.host_filter) {
-            return false;
+        if self.rules.is_empty() {
+            return true;
         }
 
-        if !self.path_filter.is_empty() && !path.to_ascii_lowercase().contains(&self.path_filter) {
-            return false;
-        }
+        self.rules.iter().filter(|rule| rule.enabled).any(|rule| {
+            if !rule.host_contains.is_empty()
+                && !host
+                    .to_ascii_lowercase()
+                    .contains(&rule.host_contains.to_ascii_lowercase())
+            {
+                return false;
+            }
 
-        if !self.method_filter.is_empty() && !method.eq_ignore_ascii_case(&self.method_filter) {
-            return false;
-        }
+            if !rule.path_contains.is_empty()
+                && !path
+                    .to_ascii_lowercase()
+                    .contains(&rule.path_contains.to_ascii_lowercase())
+            {
+                return false;
+            }
 
-        true
+            if !rule.method.is_empty() && !method.eq_ignore_ascii_case(&rule.method) {
+                return false;
+            }
+
+            true
+        })
     }
 
     pub fn apply_decision(&mut self, input: InterceptDecisionInput) -> Result<(), String> {
@@ -708,6 +721,13 @@ fn apply_intercept_patch(
         *body_bytes = next_body_bytes;
         refresh_content_length(&mut parts.headers, body_bytes.len());
     }
+}
+
+fn normalize_rule(mut rule: InterceptionRule) -> InterceptionRule {
+    rule.host_contains = rule.host_contains.trim().to_ascii_lowercase();
+    rule.path_contains = rule.path_contains.trim().to_ascii_lowercase();
+    rule.method = rule.method.trim().to_ascii_uppercase();
+    rule
 }
 
 fn refresh_content_length(headers: &mut HeaderMap, size: usize) {

@@ -73,19 +73,23 @@ type PendingInterceptRequest = {
 type InterceptionSnapshot = {
   enabled: boolean;
   timeoutMs: number;
-  hostFilter: string;
-  pathFilter: string;
-  methodFilter: string;
+  rules: InterceptionRule[];
   pendingCount: number;
   pendingRequests: PendingInterceptRequest[];
+};
+
+type InterceptionRule = {
+  id: string;
+  enabled: boolean;
+  hostContains: string;
+  pathContains: string;
+  method: string;
 };
 
 type InterceptionConfigInput = {
   enabled: boolean;
   timeoutMs?: number;
-  hostFilter?: string;
-  pathFilter?: string;
-  methodFilter?: string;
+  rules?: InterceptionRule[];
 };
 
 type InterceptDecisionInput = {
@@ -233,6 +237,11 @@ type LocaleTexts = {
   interceptionPathFilter: string;
   interceptionMethodFilter: string;
   interceptionAllMethods: string;
+  interceptionRuleEnabled: string;
+  interceptionRules: string;
+  interceptionRulesEmptyHint: string;
+  addRule: string;
+  removeRule: string;
   applyInterception: string;
   pendingInterceptions: string;
   noPendingInterceptions: string;
@@ -386,6 +395,11 @@ const LOCALES: Record<Language, LocaleTexts> = {
     interceptionPathFilter: "Path contiene",
     interceptionMethodFilter: "Metodo",
     interceptionAllMethods: "Todos",
+    interceptionRuleEnabled: "Activa",
+    interceptionRules: "Reglas",
+    interceptionRulesEmptyHint: "Sin reglas activas: se intercepta todo.",
+    addRule: "Agregar regla",
+    removeRule: "Quitar",
     applyInterception: "Aplicar",
     pendingInterceptions: "Pendientes",
     noPendingInterceptions: "No hay requests pendientes de decision.",
@@ -514,6 +528,11 @@ const LOCALES: Record<Language, LocaleTexts> = {
     interceptionPathFilter: "Path contains",
     interceptionMethodFilter: "Method",
     interceptionAllMethods: "All",
+    interceptionRuleEnabled: "Enabled",
+    interceptionRules: "Rules",
+    interceptionRulesEmptyHint: "No active rules: intercept everything.",
+    addRule: "Add rule",
+    removeRule: "Remove",
     applyInterception: "Apply",
     pendingInterceptions: "Pending",
     noPendingInterceptions: "No requests pending decision.",
@@ -730,6 +749,23 @@ function parseHeaderLines(raw: string): HeaderEntry[] {
     .filter((entry) => entry.name.length > 0);
 }
 
+function createRuleId(): string {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
+    return crypto.randomUUID();
+  }
+  return `rule-${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
+}
+
+function createEmptyRule(): InterceptionRule {
+  return {
+    id: createRuleId(),
+    enabled: true,
+    hostContains: "",
+    pathContains: "",
+    method: "",
+  };
+}
+
 function buildCurlCommand(request: CapturedExchange, showSensitiveData: boolean): string {
   const parts: string[] = ["curl", "-X", request.method.toUpperCase(), escapeForSingleQuotedShell(request.url)];
 
@@ -803,9 +839,7 @@ function App() {
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
   const [interceptTimeoutInput, setInterceptTimeoutInput] = useState("12000");
-  const [interceptHostFilterInput, setInterceptHostFilterInput] = useState("");
-  const [interceptPathFilterInput, setInterceptPathFilterInput] = useState("");
-  const [interceptMethodFilterInput, setInterceptMethodFilterInput] = useState("");
+  const [interceptRulesInput, setInterceptRulesInput] = useState<InterceptionRule[]>([]);
   const [selectedPendingId, setSelectedPendingId] = useState<number | null>(null);
   const [editorMethod, setEditorMethod] = useState("");
   const [editorUrl, setEditorUrl] = useState("");
@@ -832,6 +866,12 @@ function App() {
   const availableMethods = useMemo(
     () => [...new Set(capturedRequests.map((request) => request.method).filter(Boolean))].sort(),
     [capturedRequests],
+  );
+  const availableInterceptionMethods = useMemo(
+    () =>
+      ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", ...availableMethods]
+        .filter((value, index, list) => list.indexOf(value) === index),
+    [availableMethods],
   );
 
   const filteredRequests = useMemo(() => {
@@ -945,9 +985,12 @@ function App() {
       setInterception(snapshot);
       if (syncInputs) {
         setInterceptTimeoutInput(String(snapshot.timeoutMs));
-        setInterceptHostFilterInput(snapshot.hostFilter ?? "");
-        setInterceptPathFilterInput(snapshot.pathFilter ?? "");
-        setInterceptMethodFilterInput(snapshot.methodFilter ?? "");
+        setInterceptRulesInput(
+          snapshot.rules.map((rule) => ({
+            ...rule,
+            id: rule.id || createRuleId(),
+          })),
+        );
       }
       setSelectedPendingId((current) => {
         if (snapshot.pendingRequests.length === 0) return null;
@@ -1100,26 +1143,51 @@ function App() {
     }
   }
 
+  function handleAddInterceptionRule() {
+    setInterceptRulesInput((previous) => [...previous, createEmptyRule()]);
+  }
+
+  function handleRemoveInterceptionRule(ruleId: string) {
+    setInterceptRulesInput((previous) => previous.filter((rule) => rule.id !== ruleId));
+  }
+
+  function handleUpdateInterceptionRule(ruleId: string, patch: Partial<InterceptionRule>) {
+    setInterceptRulesInput((previous) =>
+      previous.map((rule) => (rule.id === ruleId ? { ...rule, ...patch } : rule)),
+    );
+  }
+
   async function handleApplyInterceptionConfig(enabled: boolean) {
     setInterceptBusy(true);
     setErrorText(null);
 
     const timeoutMs = Number(interceptTimeoutInput);
+    const sanitizedRules = interceptRulesInput
+      .map((rule) => ({
+        ...rule,
+        hostContains: rule.hostContains.trim(),
+        pathContains: rule.pathContains.trim(),
+        method: rule.method.trim().toUpperCase(),
+      }))
+      .filter((rule) => Boolean(rule.hostContains || rule.pathContains || rule.method))
+      .slice(0, 64);
+
     const payload: InterceptionConfigInput = {
       enabled,
       timeoutMs: Number.isFinite(timeoutMs) ? Math.max(1000, Math.min(timeoutMs, 120000)) : 12000,
-      hostFilter: interceptHostFilterInput.trim(),
-      pathFilter: interceptPathFilterInput.trim(),
-      methodFilter: interceptMethodFilterInput.trim().toUpperCase(),
+      rules: sanitizedRules,
     };
 
     try {
       const snapshot = await invoke<InterceptionSnapshot>("configure_interception", { config: payload });
       setInterception(snapshot);
       setInterceptTimeoutInput(String(snapshot.timeoutMs));
-      setInterceptHostFilterInput(snapshot.hostFilter ?? "");
-      setInterceptPathFilterInput(snapshot.pathFilter ?? "");
-      setInterceptMethodFilterInput(snapshot.methodFilter ?? "");
+      setInterceptRulesInput(
+        snapshot.rules.map((rule) => ({
+          ...rule,
+          id: rule.id || createRuleId(),
+        })),
+      );
       setInfoText("Configuracion de interceptacion actualizada.");
     } catch (error) {
       setErrorText(toUserError(error));
@@ -1185,6 +1253,10 @@ function App() {
   }, []);
 
   useEffect(() => {
+    document.documentElement.setAttribute("data-theme", preferences.theme);
+  }, [preferences.theme]);
+
+  useEffect(() => {
     if (!session?.active) return;
 
     const intervalId = window.setInterval(() => {
@@ -1246,7 +1318,7 @@ function App() {
   })`;
 
   return (
-    <main className={`app-shell theme-${preferences.theme} font-${preferences.fontScale}`}>
+    <main className={`app-shell font-${preferences.fontScale}`}>
       <header className="app-header">
         <div className="header-row">
           <div>
@@ -1464,48 +1536,74 @@ function App() {
                 disabled={busy || interceptBusy}
               />
             </label>
-            <label>
-              {texts.interceptionHostFilter}
-              <input
-                value={interceptHostFilterInput}
-                onChange={(event) => setInterceptHostFilterInput(event.target.value)}
-                placeholder="api.example.com"
-                disabled={busy || interceptBusy}
-              />
-            </label>
-            <label>
-              {texts.interceptionPathFilter}
-              <input
-                value={interceptPathFilterInput}
-                onChange={(event) => setInterceptPathFilterInput(event.target.value)}
-                placeholder="/v1/users"
-                disabled={busy || interceptBusy}
-              />
-            </label>
-            <label>
-              {texts.interceptionMethodFilter}
-              <select
-                value={interceptMethodFilterInput}
-                onChange={(event) => setInterceptMethodFilterInput(event.target.value)}
-                disabled={busy || interceptBusy}
-              >
-                <option value="">{texts.interceptionAllMethods}</option>
-                {["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", ...availableMethods]
-                  .filter((value, index, list) => list.indexOf(value) === index)
-                  .map((method) => (
-                    <option key={method} value={method}>
-                      {method}
-                    </option>
-                  ))}
-              </select>
-            </label>
             <button
               disabled={busy || interceptBusy}
               onClick={() => handleApplyInterceptionConfig(Boolean(interception?.enabled))}
             >
               {texts.applyInterception}
             </button>
+            <button disabled={busy || interceptBusy} onClick={handleAddInterceptionRule}>
+              {texts.addRule}
+            </button>
           </div>
+        </div>
+        <div className="interception-rules">
+          <h3>{texts.interceptionRules}</h3>
+          {interceptRulesInput.length === 0 && <p className="muted">{texts.interceptionRulesEmptyHint}</p>}
+          {interceptRulesInput.map((rule) => (
+            <div key={rule.id} className="rule-row">
+              <label className="rule-toggle">
+                <span>{texts.interceptionRuleEnabled}</span>
+                <input
+                  type="checkbox"
+                  checked={rule.enabled}
+                  disabled={busy || interceptBusy}
+                  onChange={(event) => handleUpdateInterceptionRule(rule.id, { enabled: event.target.checked })}
+                />
+              </label>
+              <label>
+                {texts.interceptionHostFilter}
+                <input
+                  value={rule.hostContains}
+                  onChange={(event) => handleUpdateInterceptionRule(rule.id, { hostContains: event.target.value })}
+                  placeholder="api.example.com"
+                  disabled={busy || interceptBusy}
+                />
+              </label>
+              <label>
+                {texts.interceptionPathFilter}
+                <input
+                  value={rule.pathContains}
+                  onChange={(event) => handleUpdateInterceptionRule(rule.id, { pathContains: event.target.value })}
+                  placeholder="/v1/users"
+                  disabled={busy || interceptBusy}
+                />
+              </label>
+              <label>
+                {texts.interceptionMethodFilter}
+                <select
+                  value={rule.method}
+                  onChange={(event) => handleUpdateInterceptionRule(rule.id, { method: event.target.value })}
+                  disabled={busy || interceptBusy}
+                >
+                  <option value="">{texts.interceptionAllMethods}</option>
+                  {availableInterceptionMethods.map((method) => (
+                    <option key={method} value={method}>
+                      {method}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <button
+                type="button"
+                className="danger"
+                disabled={busy || interceptBusy}
+                onClick={() => handleRemoveInterceptionRule(rule.id)}
+              >
+                {texts.removeRule}
+              </button>
+            </div>
+          ))}
         </div>
 
         <div className="interception-grid">
