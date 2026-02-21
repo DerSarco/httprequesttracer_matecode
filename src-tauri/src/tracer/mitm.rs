@@ -86,6 +86,9 @@ pub struct PendingInterceptRequest {
 pub struct InterceptionSnapshot {
     pub enabled: bool,
     pub timeout_ms: u64,
+    pub host_filter: String,
+    pub path_filter: String,
+    pub method_filter: String,
     pub pending_count: usize,
     pub pending_requests: Vec<PendingInterceptRequest>,
 }
@@ -95,6 +98,9 @@ pub struct InterceptionSnapshot {
 pub struct InterceptionConfigInput {
     pub enabled: bool,
     pub timeout_ms: Option<u64>,
+    pub host_filter: Option<String>,
+    pub path_filter: Option<String>,
+    pub method_filter: Option<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -141,6 +147,9 @@ struct PendingInterceptInternal {
 pub struct InterceptionController {
     enabled: bool,
     timeout_ms: u64,
+    host_filter: String,
+    path_filter: String,
+    method_filter: String,
     pending_order: VecDeque<u64>,
     pending: HashMap<u64, PendingInterceptInternal>,
 }
@@ -150,6 +159,9 @@ impl Default for InterceptionController {
         Self {
             enabled: false,
             timeout_ms: DEFAULT_INTERCEPT_TIMEOUT_MS,
+            host_filter: String::new(),
+            path_filter: String::new(),
+            method_filter: String::new(),
             pending_order: VecDeque::new(),
             pending: HashMap::new(),
         }
@@ -167,6 +179,9 @@ impl InterceptionController {
         InterceptionSnapshot {
             enabled: self.enabled,
             timeout_ms: self.timeout_ms,
+            host_filter: self.host_filter.clone(),
+            path_filter: self.path_filter.clone(),
+            method_filter: self.method_filter.clone(),
             pending_count: pending_requests.len(),
             pending_requests,
         }
@@ -176,6 +191,15 @@ impl InterceptionController {
         self.enabled = input.enabled;
         if let Some(timeout_ms) = input.timeout_ms {
             self.timeout_ms = timeout_ms.clamp(MIN_INTERCEPT_TIMEOUT_MS, MAX_INTERCEPT_TIMEOUT_MS);
+        }
+        if let Some(host_filter) = input.host_filter {
+            self.host_filter = host_filter.trim().to_ascii_lowercase();
+        }
+        if let Some(path_filter) = input.path_filter {
+            self.path_filter = path_filter.trim().to_ascii_lowercase();
+        }
+        if let Some(method_filter) = input.method_filter {
+            self.method_filter = method_filter.trim().to_ascii_uppercase();
         }
         self.snapshot()
     }
@@ -204,6 +228,26 @@ impl InterceptionController {
     fn remove_pending(&mut self, request_id: u64) {
         self.pending.remove(&request_id);
         self.pending_order.retain(|id| *id != request_id);
+    }
+
+    fn should_intercept(&self, method: &str, host: &str, path: &str) -> bool {
+        if !self.enabled {
+            return false;
+        }
+
+        if !self.host_filter.is_empty() && !host.to_ascii_lowercase().contains(&self.host_filter) {
+            return false;
+        }
+
+        if !self.path_filter.is_empty() && !path.to_ascii_lowercase().contains(&self.path_filter) {
+            return false;
+        }
+
+        if !self.method_filter.is_empty() && !method.eq_ignore_ascii_case(&self.method_filter) {
+            return false;
+        }
+
+        true
     }
 
     pub fn apply_decision(&mut self, input: InterceptDecisionInput) -> Result<(), String> {
@@ -352,13 +396,16 @@ impl CaptureHandler {
 
     async fn wait_intercept_decision(
         &self,
+        method: &str,
+        host: &str,
+        path: &str,
         snapshot: PendingInterceptRequest,
     ) -> InterceptWaitResult {
         let request_id = snapshot.id;
 
         let (timeout_ms, rx) = {
             let mut controller = self.interception.lock().await;
-            if !controller.enabled {
+            if !controller.should_intercept(method, host, path) {
                 return InterceptWaitResult::Bypass;
             }
 
@@ -446,7 +493,10 @@ impl HttpHandler for CaptureHandler {
         let mut original_method = None;
         let mut original_url = None;
 
-        match self.wait_intercept_decision(pending_snapshot).await {
+        match self
+            .wait_intercept_decision(&method, &host, &path, pending_snapshot)
+            .await
+        {
             InterceptWaitResult::Bypass => {}
             InterceptWaitResult::Timeout => {
                 intercept_status = Some("timeout".to_string());

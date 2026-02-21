@@ -73,6 +73,9 @@ type PendingInterceptRequest = {
 type InterceptionSnapshot = {
   enabled: boolean;
   timeoutMs: number;
+  hostFilter: string;
+  pathFilter: string;
+  methodFilter: string;
   pendingCount: number;
   pendingRequests: PendingInterceptRequest[];
 };
@@ -80,6 +83,9 @@ type InterceptionSnapshot = {
 type InterceptionConfigInput = {
   enabled: boolean;
   timeoutMs?: number;
+  hostFilter?: string;
+  pathFilter?: string;
+  methodFilter?: string;
 };
 
 type InterceptDecisionInput = {
@@ -223,6 +229,10 @@ type LocaleTexts = {
   interceptionTitle: string;
   interceptionEnabled: string;
   interceptionTimeout: string;
+  interceptionHostFilter: string;
+  interceptionPathFilter: string;
+  interceptionMethodFilter: string;
+  interceptionAllMethods: string;
   applyInterception: string;
   pendingInterceptions: string;
   noPendingInterceptions: string;
@@ -372,6 +382,10 @@ const LOCALES: Record<Language, LocaleTexts> = {
     interceptionTitle: "Intercepcion y reenvio",
     interceptionEnabled: "Modo interceptacion",
     interceptionTimeout: "Timeout (ms)",
+    interceptionHostFilter: "Dominio contiene",
+    interceptionPathFilter: "Path contiene",
+    interceptionMethodFilter: "Metodo",
+    interceptionAllMethods: "Todos",
     applyInterception: "Aplicar",
     pendingInterceptions: "Pendientes",
     noPendingInterceptions: "No hay requests pendientes de decision.",
@@ -496,6 +510,10 @@ const LOCALES: Record<Language, LocaleTexts> = {
     interceptionTitle: "Interception & replay",
     interceptionEnabled: "Interception mode",
     interceptionTimeout: "Timeout (ms)",
+    interceptionHostFilter: "Host contains",
+    interceptionPathFilter: "Path contains",
+    interceptionMethodFilter: "Method",
+    interceptionAllMethods: "All",
     applyInterception: "Apply",
     pendingInterceptions: "Pending",
     noPendingInterceptions: "No requests pending decision.",
@@ -785,6 +803,9 @@ function App() {
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
 
   const [interceptTimeoutInput, setInterceptTimeoutInput] = useState("12000");
+  const [interceptHostFilterInput, setInterceptHostFilterInput] = useState("");
+  const [interceptPathFilterInput, setInterceptPathFilterInput] = useState("");
+  const [interceptMethodFilterInput, setInterceptMethodFilterInput] = useState("");
   const [selectedPendingId, setSelectedPendingId] = useState<number | null>(null);
   const [editorMethod, setEditorMethod] = useState("");
   const [editorUrl, setEditorUrl] = useState("");
@@ -918,11 +939,16 @@ function App() {
     });
   }
 
-  async function loadInterceptionState() {
+  async function loadInterceptionState(syncInputs = true) {
     try {
       const snapshot = await invoke<InterceptionSnapshot>("get_interception_state");
       setInterception(snapshot);
-      setInterceptTimeoutInput(String(snapshot.timeoutMs));
+      if (syncInputs) {
+        setInterceptTimeoutInput(String(snapshot.timeoutMs));
+        setInterceptHostFilterInput(snapshot.hostFilter ?? "");
+        setInterceptPathFilterInput(snapshot.pathFilter ?? "");
+        setInterceptMethodFilterInput(snapshot.methodFilter ?? "");
+      }
       setSelectedPendingId((current) => {
         if (snapshot.pendingRequests.length === 0) return null;
         if (current && snapshot.pendingRequests.some((request) => request.id === current)) {
@@ -1082,11 +1108,18 @@ function App() {
     const payload: InterceptionConfigInput = {
       enabled,
       timeoutMs: Number.isFinite(timeoutMs) ? Math.max(1000, Math.min(timeoutMs, 120000)) : 12000,
+      hostFilter: interceptHostFilterInput.trim(),
+      pathFilter: interceptPathFilterInput.trim(),
+      methodFilter: interceptMethodFilterInput.trim().toUpperCase(),
     };
 
     try {
       const snapshot = await invoke<InterceptionSnapshot>("configure_interception", { config: payload });
       setInterception(snapshot);
+      setInterceptTimeoutInput(String(snapshot.timeoutMs));
+      setInterceptHostFilterInput(snapshot.hostFilter ?? "");
+      setInterceptPathFilterInput(snapshot.pathFilter ?? "");
+      setInterceptMethodFilterInput(snapshot.methodFilter ?? "");
       setInfoText("Configuracion de interceptacion actualizada.");
     } catch (error) {
       setErrorText(toUserError(error));
@@ -1155,7 +1188,7 @@ function App() {
     if (!session?.active) return;
 
     const intervalId = window.setInterval(() => {
-      Promise.all([loadCapturedRequests(), loadInterceptionState()]).catch(() => {
+      Promise.all([loadCapturedRequests(), loadInterceptionState(false)]).catch(() => {
         // Polling should not break the UI interaction loop.
       });
     }, 800);
@@ -1431,6 +1464,41 @@ function App() {
                 disabled={busy || interceptBusy}
               />
             </label>
+            <label>
+              {texts.interceptionHostFilter}
+              <input
+                value={interceptHostFilterInput}
+                onChange={(event) => setInterceptHostFilterInput(event.target.value)}
+                placeholder="api.example.com"
+                disabled={busy || interceptBusy}
+              />
+            </label>
+            <label>
+              {texts.interceptionPathFilter}
+              <input
+                value={interceptPathFilterInput}
+                onChange={(event) => setInterceptPathFilterInput(event.target.value)}
+                placeholder="/v1/users"
+                disabled={busy || interceptBusy}
+              />
+            </label>
+            <label>
+              {texts.interceptionMethodFilter}
+              <select
+                value={interceptMethodFilterInput}
+                onChange={(event) => setInterceptMethodFilterInput(event.target.value)}
+                disabled={busy || interceptBusy}
+              >
+                <option value="">{texts.interceptionAllMethods}</option>
+                {["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", ...availableMethods]
+                  .filter((value, index, list) => list.indexOf(value) === index)
+                  .map((method) => (
+                    <option key={method} value={method}>
+                      {method}
+                    </option>
+                  ))}
+              </select>
+            </label>
             <button
               disabled={busy || interceptBusy}
               onClick={() => handleApplyInterceptionConfig(Boolean(interception?.enabled))}
@@ -1456,7 +1524,9 @@ function App() {
                   >
                     <span>{formatRequestTimestamp(pending.startedAtUnixMs)}</span>
                     <strong>{pending.method}</strong>
-                    <code>{pending.host}{pending.path}</code>
+                    <code className="pending-target" title={`${pending.host}${pending.path}`}>
+                      {pending.host}{pending.path}
+                    </code>
                   </li>
                 ))}
               </ul>
@@ -1580,8 +1650,12 @@ function App() {
                 >
                   <td>{formatRequestTimestamp(request.startedAtUnixMs)}</td>
                   <td>{request.method}</td>
-                  <td>{request.host || "-"}</td>
-                  <td className="mono">{request.path}</td>
+                  <td className="host-cell" title={request.host || "-"}>
+                    {request.host || "-"}
+                  </td>
+                  <td className="mono path-cell" title={request.path}>
+                    {request.path}
+                  </td>
                   <td>{request.statusCode}</td>
                   <td>{request.durationMs} ms</td>
                 </tr>
@@ -1599,7 +1673,8 @@ function App() {
             <div className="detail-title-row">
               <div className="detail-main-content">
                 <p className="detail-method">
-                  <strong>{selectedRequest.method}</strong> <span className="mono">{selectedRequest.path}</span>
+                  <strong>{selectedRequest.method}</strong>{" "}
+                  <span className="mono detail-path">{selectedRequest.path}</span>
                 </p>
                 <p className="detail-url mono" title={selectedRequest.url}>{selectedRequest.url}</p>
               </div>

@@ -337,6 +337,11 @@ h3 {
   min-width: 140px;
 }
 
+.interception-controls input,
+.interception-controls select {
+  min-width: 150px;
+}
+
 .interception-grid {
   margin-top: 12px;
   display: grid;
@@ -346,6 +351,13 @@ h3 {
 
 .pending-list .simple-list li {
   cursor: pointer;
+  grid-template-columns: 92px 72px minmax(0, 1fr);
+}
+
+.pending-target {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .selected-item {
@@ -389,6 +401,7 @@ table {
   width: 100%;
   border-collapse: collapse;
   font-size: 0.87rem;
+  table-layout: fixed;
 }
 
 thead th {
@@ -403,6 +416,7 @@ thead th {
 tbody td {
   padding: 9px 10px;
   border-bottom: 1px solid rgba(198, 210, 200, 0.4);
+  min-width: 0;
 }
 
 thead th:first-child,
@@ -421,6 +435,13 @@ tbody tr:hover {
 
 tbody tr.selected {
   background: rgba(168, 214, 181, 0.35);
+}
+
+.host-cell,
+.path-cell {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 td.empty {
@@ -455,6 +476,12 @@ td.empty {
   display: flex;
   align-items: center;
   gap: 8px;
+  flex-wrap: wrap;
+}
+
+.detail-path {
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .detail-url {
