@@ -10,6 +10,10 @@ Desktop app (Tauri + Rust + React) for Android emulator HTTP tracing.
 - Start/Stop tracing session by applying/removing emulator proxy through ADB.
 - Prepare CA certificate installation into emulator (push + installer intent).
 - Captured request list and detail panel (request/response, headers, cookies, params, timing) in memory.
+- Interception mode (pending queue, edit, forward, drop, timeout fallback).
+- Request export to cURL + copy actions in detail tabs.
+- Config/preferences panel (ES/EN, light/dark, font size, sensitive-data masking).
+- Sort + filter controls for high-volume sessions.
 
 This seed currently covers `SPIKE-01` to `SPIKE-04`.
 
@@ -45,6 +49,9 @@ The bundle output is generated under:
 - `get_session_state`
 - `get_captured_requests`
 - `clear_captured_requests`
+- `get_interception_state`
+- `configure_interception`
+- `decide_intercept_request`
 - `prepare_certificate_install`
 - `start_tracing`
 - `stop_tracing`
@@ -69,3 +76,7 @@ The bundle output is generated under:
 
 - `docs/mvp-01-configuracion-preferencias.md`
 - `docs/mvp-05-sesiones-efimeras-privacidad.md`
+- `docs/mvp-07-arquitectura-modular.md`
+- `docs/mvp-08-testing-strategy.md`
+- `docs/mvp-09-packaging-guide.md`
+- `docs/mvp-15-guardrails-interceptacion.md`

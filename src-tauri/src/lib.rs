@@ -4,9 +4,13 @@ use std::sync::{Arc, Mutex};
 
 use tauri::State;
 use tracer::{
-    adb::AdbStatus,
+    adb_controller::AdbStatus,
     cert::CertificateSetupResult,
-    mitm::{CaptureStore, CapturedExchange, ProxyRuntime, SharedCaptureStore},
+    core_proxy::{
+        CaptureStore, CapturedExchange, InterceptDecisionInput, InterceptionConfigInput,
+        InterceptionController, InterceptionSnapshot, ProxyRuntime, SharedCaptureStore,
+        SharedInterceptionController,
+    },
     session::{TraceSession, TraceSessionSnapshot},
 };
 
@@ -14,6 +18,7 @@ struct AppState {
     session: Mutex<TraceSession>,
     proxy_runtime: Mutex<Option<ProxyRuntime>>,
     capture_store: SharedCaptureStore,
+    interception_controller: SharedInterceptionController,
 }
 
 impl Default for AppState {
@@ -22,13 +27,16 @@ impl Default for AppState {
             session: Mutex::new(TraceSession::default()),
             proxy_runtime: Mutex::new(None),
             capture_store: Arc::new(Mutex::new(CaptureStore::default())),
+            interception_controller: Arc::new(tokio::sync::Mutex::new(
+                InterceptionController::default(),
+            )),
         }
     }
 }
 
 #[tauri::command]
 fn get_adb_status() -> Result<AdbStatus, String> {
-    tracer::adb::get_adb_status()
+    tracer::adb_controller::get_adb_status()
 }
 
 #[tauri::command]
@@ -61,6 +69,33 @@ fn clear_captured_requests(state: State<'_, AppState>) -> Result<(), String> {
 }
 
 #[tauri::command]
+async fn get_interception_state(
+    state: State<'_, AppState>,
+) -> Result<InterceptionSnapshot, String> {
+    let controller = state.interception_controller.lock().await;
+    Ok(controller.snapshot())
+}
+
+#[tauri::command]
+async fn configure_interception(
+    config: InterceptionConfigInput,
+    state: State<'_, AppState>,
+) -> Result<InterceptionSnapshot, String> {
+    let mut controller = state.interception_controller.lock().await;
+    Ok(controller.apply_config(config))
+}
+
+#[tauri::command]
+async fn decide_intercept_request(
+    decision: InterceptDecisionInput,
+    state: State<'_, AppState>,
+) -> Result<InterceptionSnapshot, String> {
+    let mut controller = state.interception_controller.lock().await;
+    controller.apply_decision(decision)?;
+    Ok(controller.snapshot())
+}
+
+#[tauri::command]
 fn prepare_certificate_install(
     emulator_serial: String,
     state: State<'_, AppState>,
@@ -69,7 +104,7 @@ fn prepare_certificate_install(
         return Err("Select an emulator before preparing certificate install".to_string());
     }
 
-    tracer::adb::ensure_adb_available()?;
+    tracer::adb_controller::ensure_adb_available()?;
     let ca_bundle = tracer::cert::ensure_ca_bundle()?;
     let setup_result = tracer::cert::prepare_certificate_install(&emulator_serial, &ca_bundle)?;
 
@@ -111,8 +146,8 @@ async fn start_tracing(
         }
     }
 
-    tracer::adb::ensure_adb_available()?;
-    tracer::adb::ensure_emulator_online(&emulator_serial)?;
+    tracer::adb_controller::ensure_adb_available()?;
+    tracer::adb_controller::ensure_emulator_online(&emulator_serial)?;
     let ca_bundle = tracer::cert::ensure_ca_bundle()?;
 
     {
@@ -130,12 +165,17 @@ async fn start_tracing(
             .map_err(|_| "Unable to access captured requests".to_string())?;
         store.clear();
     }
+    {
+        let mut controller = state.interception_controller.lock().await;
+        controller.clear_pending();
+    }
 
-    let runtime = tracer::mitm::start_proxy(
+    let runtime = tracer::core_proxy::start_proxy(
         "0.0.0.0",
         proxy_port,
         &ca_bundle,
         state.capture_store.clone(),
+        state.interception_controller.clone(),
     )
     .await?;
     let mut runtime_to_register = Some(runtime);
@@ -159,9 +199,9 @@ async fn start_tracing(
     }
 
     let proxy_address = format!("{proxy_host}:{proxy_port}");
-    if let Err(err) = tracer::adb::set_emulator_proxy(&emulator_serial, &proxy_address) {
+    if let Err(err) = tracer::adb_controller::set_emulator_proxy(&emulator_serial, &proxy_address) {
         let mut rollback_notes = Vec::new();
-        if let Err(clear_err) = tracer::adb::clear_emulator_proxy(&emulator_serial) {
+        if let Err(clear_err) = tracer::adb_controller::clear_emulator_proxy(&emulator_serial) {
             rollback_notes.push(format!("proxy rollback warning: {clear_err}"));
         }
 
@@ -225,6 +265,10 @@ async fn stop_tracing(state: State<'_, AppState>) -> Result<TraceSessionSnapshot
     if let Some(runtime) = runtime {
         runtime.stop().await;
     }
+    {
+        let mut controller = state.interception_controller.lock().await;
+        controller.clear_pending();
+    }
 
     let emulator_serial = {
         let session = state
@@ -236,7 +280,7 @@ async fn stop_tracing(state: State<'_, AppState>) -> Result<TraceSessionSnapshot
 
     let mut clear_proxy_error = None;
     if let Some(emulator_serial) = emulator_serial {
-        if let Err(err) = tracer::adb::clear_emulator_proxy(&emulator_serial) {
+        if let Err(err) = tracer::adb_controller::clear_emulator_proxy(&emulator_serial) {
             clear_proxy_error = Some(format!(
                 "Tracing stopped locally, but failed to clear emulator proxy: {err}"
             ));
@@ -263,6 +307,9 @@ pub fn run() {
             get_session_state,
             get_captured_requests,
             clear_captured_requests,
+            get_interception_state,
+            configure_interception,
+            decide_intercept_request,
             prepare_certificate_install,
             start_tracing,
             stop_tracing
