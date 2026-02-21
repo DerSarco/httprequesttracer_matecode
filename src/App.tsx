@@ -240,6 +240,8 @@ type LocaleTexts = {
   interceptionRuleEnabled: string;
   interceptionRules: string;
   interceptionRulesEmptyHint: string;
+  manageRules: string;
+  close: string;
   addRule: string;
   removeRule: string;
   applyInterception: string;
@@ -398,6 +400,8 @@ const LOCALES: Record<Language, LocaleTexts> = {
     interceptionRuleEnabled: "Activa",
     interceptionRules: "Reglas",
     interceptionRulesEmptyHint: "Sin reglas activas: se intercepta todo.",
+    manageRules: "Reglas",
+    close: "Cerrar",
     addRule: "Agregar regla",
     removeRule: "Quitar",
     applyInterception: "Aplicar",
@@ -531,6 +535,8 @@ const LOCALES: Record<Language, LocaleTexts> = {
     interceptionRuleEnabled: "Enabled",
     interceptionRules: "Rules",
     interceptionRulesEmptyHint: "No active rules: intercept everything.",
+    manageRules: "Rules",
+    close: "Close",
     addRule: "Add rule",
     removeRule: "Remove",
     applyInterception: "Apply",
@@ -837,6 +843,7 @@ function App() {
   const [infoText, setInfoText] = useState<string | null>(null);
   const [certInfoText, setCertInfoText] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
+  const [rulesModalOpen, setRulesModalOpen] = useState(false);
 
   const [interceptTimeoutInput, setInterceptTimeoutInput] = useState("12000");
   const [interceptRulesInput, setInterceptRulesInput] = useState<InterceptionRule[]>([]);
@@ -1257,6 +1264,25 @@ function App() {
   }, [preferences.theme]);
 
   useEffect(() => {
+    if (!rulesModalOpen) return;
+
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        setRulesModalOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [rulesModalOpen]);
+
+  useEffect(() => {
     if (!session?.active) return;
 
     const intervalId = window.setInterval(() => {
@@ -1545,68 +1571,10 @@ function App() {
             >
               {texts.applyInterception}
             </button>
-            <button disabled={busy || interceptBusy} onClick={handleAddInterceptionRule}>
-              {texts.addRule}
+            <button disabled={busy || interceptBusy} onClick={() => setRulesModalOpen(true)}>
+              {texts.manageRules}
             </button>
           </div>
-        </div>
-        <div className="interception-rules">
-          <h3>{texts.interceptionRules}</h3>
-          {interceptRulesInput.length === 0 && <p className="muted">{texts.interceptionRulesEmptyHint}</p>}
-          {interceptRulesInput.map((rule) => (
-            <div key={rule.id} className="rule-row">
-              <label className="rule-toggle">
-                <span>{texts.interceptionRuleEnabled}</span>
-                <input
-                  type="checkbox"
-                  checked={rule.enabled}
-                  disabled={busy || interceptBusy}
-                  onChange={(event) => handleUpdateInterceptionRule(rule.id, { enabled: event.target.checked })}
-                />
-              </label>
-              <label>
-                {texts.interceptionHostFilter}
-                <input
-                  value={rule.hostContains}
-                  onChange={(event) => handleUpdateInterceptionRule(rule.id, { hostContains: event.target.value })}
-                  placeholder="api.example.com"
-                  disabled={busy || interceptBusy}
-                />
-              </label>
-              <label>
-                {texts.interceptionPathFilter}
-                <input
-                  value={rule.pathContains}
-                  onChange={(event) => handleUpdateInterceptionRule(rule.id, { pathContains: event.target.value })}
-                  placeholder="/v1/users"
-                  disabled={busy || interceptBusy}
-                />
-              </label>
-              <label>
-                {texts.interceptionMethodFilter}
-                <select
-                  value={rule.method}
-                  onChange={(event) => handleUpdateInterceptionRule(rule.id, { method: event.target.value })}
-                  disabled={busy || interceptBusy}
-                >
-                  <option value="">{texts.interceptionAllMethods}</option>
-                  {availableInterceptionMethods.map((method) => (
-                    <option key={method} value={method}>
-                      {method}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <button
-                type="button"
-                className="danger"
-                disabled={busy || interceptBusy}
-                onClick={() => handleRemoveInterceptionRule(rule.id)}
-              >
-                {texts.removeRule}
-              </button>
-            </div>
-          ))}
         </div>
 
         <div className="interception-grid">
@@ -1636,48 +1604,50 @@ function App() {
 
           <div className="intercept-editor">
             <h3>{texts.interceptEditor}</h3>
-            {!selectedPending && <p className="muted">{texts.noPendingInterceptions}</p>}
-            {selectedPending && (
-              <>
-                <div className="editor-grid">
+            <div className="intercept-editor-content">
+              {!selectedPending && <p className="muted">{texts.noPendingInterceptions}</p>}
+              {selectedPending && (
+                <>
+                  <div className="editor-grid">
+                    <label>
+                      {texts.method}
+                      <input value={editorMethod} onChange={(event) => setEditorMethod(event.target.value)} />
+                    </label>
+                    <label>
+                      URL
+                      <input value={editorUrl} onChange={(event) => setEditorUrl(event.target.value)} />
+                    </label>
+                  </div>
                   <label>
-                    {texts.method}
-                    <input value={editorMethod} onChange={(event) => setEditorMethod(event.target.value)} />
+                    {texts.editorQuery}
+                    <input value={editorQuery} onChange={(event) => setEditorQuery(event.target.value)} />
                   </label>
                   <label>
-                    URL
-                    <input value={editorUrl} onChange={(event) => setEditorUrl(event.target.value)} />
+                    {texts.editorCookies}
+                    <input value={editorCookies} onChange={(event) => setEditorCookies(event.target.value)} />
                   </label>
-                </div>
-                <label>
-                  {texts.editorQuery}
-                  <input value={editorQuery} onChange={(event) => setEditorQuery(event.target.value)} />
-                </label>
-                <label>
-                  {texts.editorCookies}
-                  <input value={editorCookies} onChange={(event) => setEditorCookies(event.target.value)} />
-                </label>
-                <label>
-                  {texts.editorHeaders}
-                  <textarea value={editorHeaders} onChange={(event) => setEditorHeaders(event.target.value)} rows={7} />
-                </label>
-                <label>
-                  {texts.editorBody}
-                  <textarea value={editorBody} onChange={(event) => setEditorBody(event.target.value)} rows={8} />
-                </label>
-                <div className="actions">
-                  <button disabled={interceptBusy} onClick={() => handleInterceptDecision("forward", true)}>
-                    {texts.forwardWithChanges}
-                  </button>
-                  <button disabled={interceptBusy} onClick={() => handleInterceptDecision("forward", false)}>
-                    {texts.forwardWithoutChanges}
-                  </button>
-                  <button className="danger" disabled={interceptBusy} onClick={() => handleInterceptDecision("drop", false)}>
-                    {texts.dropRequest}
-                  </button>
-                </div>
-              </>
-            )}
+                  <label>
+                    {texts.editorHeaders}
+                    <textarea value={editorHeaders} onChange={(event) => setEditorHeaders(event.target.value)} rows={7} />
+                  </label>
+                  <label>
+                    {texts.editorBody}
+                    <textarea value={editorBody} onChange={(event) => setEditorBody(event.target.value)} rows={8} />
+                  </label>
+                  <div className="actions">
+                    <button disabled={interceptBusy} onClick={() => handleInterceptDecision("forward", true)}>
+                      {texts.forwardWithChanges}
+                    </button>
+                    <button disabled={interceptBusy} onClick={() => handleInterceptDecision("forward", false)}>
+                      {texts.forwardWithoutChanges}
+                    </button>
+                    <button className="danger" disabled={interceptBusy} onClick={() => handleInterceptDecision("drop", false)}>
+                      {texts.dropRequest}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       </section>
@@ -1965,6 +1935,100 @@ function App() {
           </>
         )}
       </section>
+
+      {rulesModalOpen && (
+        <div className="modal-backdrop" onClick={() => setRulesModalOpen(false)}>
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label={texts.interceptionRules}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h3>{texts.interceptionRules}</h3>
+              <button type="button" onClick={() => setRulesModalOpen(false)} disabled={busy || interceptBusy}>
+                {texts.close}
+              </button>
+            </div>
+            {interceptRulesInput.length === 0 && <p className="muted">{texts.interceptionRulesEmptyHint}</p>}
+            {interceptRulesInput.length > 0 && (
+              <div className="interception-rules">
+                {interceptRulesInput.map((rule) => (
+                  <div key={rule.id} className="rule-row">
+                    <label className="rule-toggle">
+                      <span>{texts.interceptionRuleEnabled}</span>
+                      <input
+                        type="checkbox"
+                        checked={rule.enabled}
+                        disabled={busy || interceptBusy}
+                        onChange={(event) => handleUpdateInterceptionRule(rule.id, { enabled: event.target.checked })}
+                      />
+                    </label>
+                    <label>
+                      {texts.interceptionHostFilter}
+                      <input
+                        value={rule.hostContains}
+                        onChange={(event) => handleUpdateInterceptionRule(rule.id, { hostContains: event.target.value })}
+                        placeholder="api.example.com"
+                        disabled={busy || interceptBusy}
+                      />
+                    </label>
+                    <label>
+                      {texts.interceptionPathFilter}
+                      <input
+                        value={rule.pathContains}
+                        onChange={(event) => handleUpdateInterceptionRule(rule.id, { pathContains: event.target.value })}
+                        placeholder="/v1/users"
+                        disabled={busy || interceptBusy}
+                      />
+                    </label>
+                    <label>
+                      {texts.interceptionMethodFilter}
+                      <select
+                        value={rule.method}
+                        onChange={(event) => handleUpdateInterceptionRule(rule.id, { method: event.target.value })}
+                        disabled={busy || interceptBusy}
+                      >
+                        <option value="">{texts.interceptionAllMethods}</option>
+                        {availableInterceptionMethods.map((method) => (
+                          <option key={method} value={method}>
+                            {method}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <button
+                      type="button"
+                      className="danger"
+                      disabled={busy || interceptBusy}
+                      onClick={() => handleRemoveInterceptionRule(rule.id)}
+                    >
+                      {texts.removeRule}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="actions modal-actions">
+              <button type="button" disabled={busy || interceptBusy} onClick={handleAddInterceptionRule}>
+                {texts.addRule}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy || interceptBusy}
+                onClick={async () => {
+                  await handleApplyInterceptionConfig(Boolean(interception?.enabled));
+                  setRulesModalOpen(false);
+                }}
+              >
+                {texts.applyInterception}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
     </main>
   );
 }
