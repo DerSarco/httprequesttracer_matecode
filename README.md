@@ -9,7 +9,7 @@ Desktop app (Tauri + Rust + React) for Android emulator HTTP tracing.
 - Local MITM proxy for HTTP/HTTPS capture (hudsucker).
 - Start/Stop tracing session by applying/removing emulator proxy through ADB.
 - Prepare CA certificate installation into emulator (push + installer intent).
-- Captured request list and detail panel (request/response headers) in memory.
+- Captured request list and detail panel (request/response, headers, cookies, params, timing) in memory.
 
 This seed currently covers `SPIKE-01` to `SPIKE-04`.
 
@@ -53,7 +53,8 @@ The bundle output is generated under:
 
 - Host OS proxy is not modified.
 - Only emulator proxy settings are changed.
-- Data is kept local in memory only.
+- Data is kept local in memory only (no persistence of captured traffic).
+- No external backend integration is used to send captured requests/responses.
 - HTTPS capture requires the local CA certificate to be trusted in the emulator.
 - Apps with TLS pinning may still reject interception even with trusted CA.
 - ADB lookup fallback paths: `/opt/homebrew/bin/adb`, `/opt/local/bin/adb`, `/usr/local/bin/adb`, `/usr/bin/adb`.
@@ -67,3 +68,4 @@ The bundle output is generated under:
 ## MVP docs
 
 - `docs/mvp-01-configuracion-preferencias.md`
+- `docs/mvp-05-sesiones-efimeras-privacidad.md`

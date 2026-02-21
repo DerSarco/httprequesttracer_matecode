@@ -1,4 +1,5 @@
 use std::{
+    collections::VecDeque,
     io::Read,
     net::SocketAddr,
     sync::{
@@ -54,12 +55,12 @@ pub struct CapturedExchange {
 
 #[derive(Debug, Default)]
 pub struct CaptureStore {
-    entries: Vec<CapturedExchange>,
+    entries: VecDeque<CapturedExchange>,
 }
 
 impl CaptureStore {
     pub fn snapshot(&self) -> Vec<CapturedExchange> {
-        self.entries.clone()
+        self.entries.iter().cloned().collect()
     }
 
     pub fn clear(&mut self) {
@@ -67,11 +68,14 @@ impl CaptureStore {
     }
 
     fn push(&mut self, entry: CapturedExchange, max_entries: usize) {
-        self.entries.push(entry);
-        if self.entries.len() > max_entries {
-            let overflow = self.entries.len() - max_entries;
-            self.entries.drain(0..overflow);
+        if max_entries == 0 {
+            return;
         }
+
+        if self.entries.len() >= max_entries {
+            let _ = self.entries.pop_front();
+        }
+        self.entries.push_back(entry);
     }
 }
 
@@ -380,4 +384,50 @@ fn now_unix_ms() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{CaptureStore, CapturedExchange};
+
+    #[test]
+    fn capture_store_behaves_as_circular_buffer() {
+        let mut store = CaptureStore::default();
+        store.push(sample_exchange(1), 3);
+        store.push(sample_exchange(2), 3);
+        store.push(sample_exchange(3), 3);
+        store.push(sample_exchange(4), 3);
+
+        let ids: Vec<u64> = store.snapshot().into_iter().map(|entry| entry.id).collect();
+        assert_eq!(ids, vec![2, 3, 4]);
+    }
+
+    #[test]
+    fn capture_store_clear_removes_entries() {
+        let mut store = CaptureStore::default();
+        store.push(sample_exchange(1), 10);
+        store.push(sample_exchange(2), 10);
+        store.clear();
+
+        assert!(store.snapshot().is_empty());
+    }
+
+    fn sample_exchange(id: u64) -> CapturedExchange {
+        CapturedExchange {
+            id,
+            started_at_unix_ms: 0,
+            duration_ms: 0,
+            method: "GET".to_string(),
+            url: "https://example.com".to_string(),
+            host: "example.com".to_string(),
+            path: "/".to_string(),
+            status_code: 200,
+            request_headers: Vec::new(),
+            response_headers: Vec::new(),
+            request_body: None,
+            response_body: None,
+            request_body_size: 0,
+            response_body_size: 0,
+        }
+    }
 }
