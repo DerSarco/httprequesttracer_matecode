@@ -1517,17 +1517,20 @@ function App() {
         <div className="interception-header">
           <h2>{texts.interceptionTitle}</h2>
           <div className="interception-controls">
-            <label>
-              {texts.interceptionEnabled}
-              <select
-                value={interception?.enabled ? "on" : "off"}
-                disabled={busy || interceptBusy}
-                onChange={(event) => handleApplyInterceptionConfig(event.target.value === "on")}
-              >
-                <option value="off">OFF</option>
-                <option value="on">ON</option>
-              </select>
-            </label>
+            <div className="switch-field">
+              <span>{texts.interceptionEnabled}</span>
+              <label className="toggle-switch">
+                <input
+                  type="checkbox"
+                  role="switch"
+                  checked={Boolean(interception?.enabled)}
+                  disabled={busy || interceptBusy}
+                  onChange={(event) => handleApplyInterceptionConfig(event.target.checked)}
+                  aria-label={texts.interceptionEnabled}
+                />
+                <span className="toggle-slider" aria-hidden="true" />
+              </label>
+            </div>
             <label>
               {texts.interceptionTimeout}
               <input
