@@ -108,6 +108,7 @@ type ThemeMode = "light" | "dark";
 type FontScale = "small" | "medium" | "large";
 type SortField = "id" | "startedAtUnixMs";
 type SortDirection = "asc" | "desc";
+type WorkspaceTab = "requests" | "interception";
 
 type UserPreferences = {
   language: Language;
@@ -183,6 +184,8 @@ type LocaleTexts = {
   active: string;
   stopped: string;
   requestsTitle: string;
+  workspaceTabRequests: string;
+  workspaceTabInterception: string;
   clearSession: string;
   filterText: string;
   filterMethod: string;
@@ -252,8 +255,7 @@ type LocaleTexts = {
   editorBody: string;
   editorQuery: string;
   editorCookies: string;
-  forwardWithChanges: string;
-  forwardWithoutChanges: string;
+  forwardRequest: string;
   dropRequest: string;
   intercepted: string;
   timeout: string;
@@ -343,6 +345,8 @@ const LOCALES: Record<Language, LocaleTexts> = {
     active: "Activo",
     stopped: "Detenido",
     requestsTitle: "Requests capturadas",
+    workspaceTabRequests: "Requests",
+    workspaceTabInterception: "Intercepcion",
     clearSession: "Clear Session",
     filterText: "Buscar por host o path",
     filterMethod: "Filtro metodo HTTP",
@@ -412,8 +416,7 @@ const LOCALES: Record<Language, LocaleTexts> = {
     editorBody: "Body",
     editorQuery: "Query string",
     editorCookies: "Cookies",
-    forwardWithChanges: "Reenviar con cambios",
-    forwardWithoutChanges: "Reenviar sin cambios",
+    forwardRequest: "Reenviar",
     dropRequest: "Descartar",
     intercepted: "interceptada",
     timeout: "timeout",
@@ -478,6 +481,8 @@ const LOCALES: Record<Language, LocaleTexts> = {
     active: "Active",
     stopped: "Stopped",
     requestsTitle: "Captured requests",
+    workspaceTabRequests: "Requests",
+    workspaceTabInterception: "Interception",
     clearSession: "Clear Session",
     filterText: "Search by host or path",
     filterMethod: "HTTP method filter",
@@ -547,8 +552,7 @@ const LOCALES: Record<Language, LocaleTexts> = {
     editorBody: "Body",
     editorQuery: "Query string",
     editorCookies: "Cookies",
-    forwardWithChanges: "Forward with changes",
-    forwardWithoutChanges: "Forward without changes",
+    forwardRequest: "Forward",
     dropRequest: "Drop",
     intercepted: "intercepted",
     timeout: "timeout",
@@ -826,6 +830,7 @@ function App() {
   const [capturedRequests, setCapturedRequests] = useState<CapturedExchange[]>([]);
   const [selectedRequestId, setSelectedRequestId] = useState<number | null>(null);
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>("request");
+  const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<WorkspaceTab>("requests");
 
   const [searchFilter, setSearchFilter] = useState("");
   const [methodFilter, setMethodFilter] = useState("all");
@@ -1203,7 +1208,7 @@ function App() {
     }
   }
 
-  async function handleInterceptDecision(action: "forward" | "drop", applyEditorChanges: boolean) {
+  async function handleInterceptDecision(action: "forward" | "drop") {
     if (!selectedPending) return;
 
     setInterceptBusy(true);
@@ -1214,7 +1219,7 @@ function App() {
       action,
     };
 
-    if (applyEditorChanges && action === "forward") {
+    if (action === "forward") {
       decision.method = editorMethod.trim() || undefined;
       decision.url = editorUrl.trim() || undefined;
       decision.headers = parseHeaderLines(editorHeaders);
@@ -1539,6 +1544,27 @@ function App() {
         </article>
       </section>
 
+      <section className="panel workspace-tabs-panel">
+        <nav className="workspace-tabs" aria-label="Main workspace tabs">
+          <button
+            type="button"
+            className={activeWorkspaceTab === "requests" ? "active" : ""}
+            onClick={() => setActiveWorkspaceTab("requests")}
+          >
+            {texts.workspaceTabRequests}
+          </button>
+          <button
+            type="button"
+            className={activeWorkspaceTab === "interception" ? "active" : ""}
+            onClick={() => setActiveWorkspaceTab("interception")}
+          >
+            {texts.workspaceTabInterception}
+            {pendingIntercepts.length > 0 && <span className="tab-count">{pendingIntercepts.length}</span>}
+          </button>
+        </nav>
+      </section>
+
+      {activeWorkspaceTab === "interception" && (
       <section className="panel interception-panel">
         <div className="interception-header">
           <h2>{texts.interceptionTitle}</h2>
@@ -1635,13 +1661,10 @@ function App() {
                     <textarea value={editorBody} onChange={(event) => setEditorBody(event.target.value)} rows={8} />
                   </label>
                   <div className="actions">
-                    <button disabled={interceptBusy} onClick={() => handleInterceptDecision("forward", true)}>
-                      {texts.forwardWithChanges}
+                    <button disabled={interceptBusy} onClick={() => handleInterceptDecision("forward")}>
+                      {texts.forwardRequest}
                     </button>
-                    <button disabled={interceptBusy} onClick={() => handleInterceptDecision("forward", false)}>
-                      {texts.forwardWithoutChanges}
-                    </button>
-                    <button className="danger" disabled={interceptBusy} onClick={() => handleInterceptDecision("drop", false)}>
+                    <button className="danger" disabled={interceptBusy} onClick={() => handleInterceptDecision("drop")}>
                       {texts.dropRequest}
                     </button>
                   </div>
@@ -1651,7 +1674,10 @@ function App() {
           </div>
         </div>
       </section>
+      )}
 
+      {activeWorkspaceTab === "requests" && (
+      <>
       <section className="panel traffic-panel">
         <div className="traffic-header">
           <h2>{requestCountText}</h2>
@@ -1935,6 +1961,8 @@ function App() {
           </>
         )}
       </section>
+      </>
+      )}
 
       {rulesModalOpen && (
         <div className="modal-backdrop" onClick={() => setRulesModalOpen(false)}>
