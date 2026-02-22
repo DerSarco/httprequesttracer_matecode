@@ -53,6 +53,8 @@ type CertificateSetupResult = {
   certLocalPath: string;
   certEmulatorPath: string;
   installerLaunched: boolean;
+  installationStatus: "installed" | "pendingUserAction" | "failed";
+  verificationNote: string;
   instructions: string;
 };
 
@@ -589,6 +591,12 @@ function toUserError(error: unknown): string {
   }
   if (raw.includes("cannot connect to daemon")) {
     return `${raw} Sugerencia: ejecuta \`adb start-server\` y luego Refresh.`;
+  }
+  if (raw.includes("adb root failed")) {
+    return `${raw} Sugerencia: usa un AVD debug/userdebug (no Play image) o completa la instalacion manual desde Settings.`;
+  }
+  if (raw.includes("adb remount failed")) {
+    return `${raw} Sugerencia: el emulador no permite montar /system en escritura; usa instalacion manual o un AVD con root.`;
   }
 
   return raw;
@@ -1127,9 +1135,18 @@ function App() {
         emulatorSerial: selectedEmulator,
       });
       setCertInfoText(
-        `${result.instructions} Archivo local: ${result.certLocalPath}. Archivo en emulador: ${result.certEmulatorPath}.`,
+        `${result.instructions} Verificacion: ${result.verificationNote} Archivo local: ${result.certLocalPath}. Archivo en emulador: ${result.certEmulatorPath}.`,
       );
-      updatePreferences({ certTrusted: false });
+      if (result.installationStatus === "installed") {
+        setInfoText("Certificado instalado automaticamente via ADB.");
+        updatePreferences({ certTrusted: true });
+      } else if (result.installationStatus === "pendingUserAction") {
+        setInfoText("Certificado copiado. Completa la confirmacion en el emulador.");
+        updatePreferences({ certTrusted: false });
+      } else {
+        setInfoText("No fue posible completar la instalacion automatica del certificado.");
+        updatePreferences({ certTrusted: false });
+      }
       await loadSessionAndAdb();
     } catch (error) {
       setErrorText(toUserError(error));

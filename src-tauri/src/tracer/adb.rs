@@ -186,6 +186,38 @@ pub fn launch_certificate_installer(serial: &str, remote_path: &str) -> Result<(
     Ok(())
 }
 
+pub fn adb_root(serial: &str) -> Result<String, String> {
+    run_adb(&["-s", serial, "root"])
+}
+
+pub fn adb_remount(serial: &str) -> Result<String, String> {
+    run_adb(&["-s", serial, "remount"])
+}
+
+pub fn chmod_remote_file(serial: &str, remote_path: &str, mode: &str) -> Result<(), String> {
+    run_adb(&["-s", serial, "shell", "chmod", mode, remote_path])?;
+    Ok(())
+}
+
+pub fn chown_remote_file(serial: &str, remote_path: &str, owner: &str) -> Result<(), String> {
+    run_adb(&["-s", serial, "shell", "chown", owner, remote_path])?;
+    Ok(())
+}
+
+pub fn remote_file_exists(serial: &str, remote_path: &str) -> Result<bool, String> {
+    match run_adb(&["-s", serial, "shell", "ls", remote_path]) {
+        Ok(_) => Ok(true),
+        Err(err)
+            if err.contains("No such file")
+                || err.contains("not found")
+                || err.contains("No such") =>
+        {
+            Ok(false)
+        }
+        Err(err) => Err(err),
+    }
+}
+
 fn list_emulators(adb_binary: &str) -> Result<(Vec<EmulatorDevice>, usize), String> {
     let devices = list_devices(adb_binary)?;
     let mut online_emulators = Vec::new();
