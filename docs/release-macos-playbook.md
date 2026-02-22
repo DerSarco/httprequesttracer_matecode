@@ -41,9 +41,12 @@ git push -u origin release/v0.1.0
    - `Start Tracing` captura requests.
    - `Stop Tracing` revierte proxy (`:0`).
    - `Cmd + Q` muestra confirmacion y guia de cleanup.
+   - Validar workaround de cuarentena si aplica:
+     - `xattr -dr com.apple.quarantine "/Applications/HTTP Request Tracer.app"`
 
 5. Publicar release:
    - Revisar notas en draft (plantilla en `.github/release-notes-template.md`).
+   - Incluir disclaimer de cuarentena mientras no exista notarizacion.
    - Completar `Known limitations` reales de la version.
    - Presionar `Publish release` en GitHub.
 
