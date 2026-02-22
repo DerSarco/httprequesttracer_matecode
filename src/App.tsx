@@ -1,5 +1,7 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import "./App.css";
 
 type EmulatorDevice = {
@@ -154,6 +156,19 @@ type LocaleTexts = {
   proxyPort: string;
   refresh: string;
   prepareCa: string;
+  certInstallConsentTitle: string;
+  certInstallConsentBody: string;
+  certInstallFlowLabel: string;
+  certInstallFlowDesc: string;
+  certInstallContinue: string;
+  certInstallPreparing: string;
+  exitPromptTitle: string;
+  exitPromptBody: string;
+  exitPromptProxyHint: string;
+  exitPromptCertHint: string;
+  exitPromptCancel: string;
+  exitPromptConfirm: string;
+  exitPromptClosing: string;
   startTracing: string;
   stopTracing: string;
   operationStatus: string;
@@ -313,10 +328,28 @@ const LOCALES: Record<Language, LocaleTexts> = {
     emulator: "Emulador",
     proxyHost: "Proxy host (emulador)",
     proxyPort: "Proxy port",
-    refresh: "Refresh",
-    prepareCa: "Prepare CA Install",
-    startTracing: "Start Tracing",
-    stopTracing: "Stop Tracing",
+    refresh: "Actualizar",
+    prepareCa: "Preparar instalacion de CA",
+    certInstallConsentTitle: "Permisos para instalacion de certificado",
+    certInstallConsentBody:
+      "La app copiara el certificado al emulador e intentara abrir Security para que completes la instalacion manual.",
+    certInstallFlowLabel: "Flujo recomendado",
+    certInstallFlowDesc:
+      "1) Copiar certificado en Download. 2) Abrir Security. 3) En Android: Encryption & credentials > Install a certificate > CA certificate.",
+    certInstallContinue: "Continue",
+    certInstallPreparing: "Copiando certificado y abriendo Security...",
+    exitPromptTitle: "Antes de salir",
+    exitPromptBody:
+      "Vamos a cerrar la app y limpiar el proxy del emulador para evitar que quede sin internet.",
+    exitPromptProxyHint:
+      "Si cierras forzado y el proxy no se limpia, ejecuta: adb shell settings put global http_proxy :0",
+    exitPromptCertHint:
+      "El certificado CA se elimina manualmente en Android: Security > Encryption & credentials.",
+    exitPromptCancel: "Cancelar",
+    exitPromptConfirm: "Salir y limpiar",
+    exitPromptClosing: "Cerrando app y limpiando proxy...",
+    startTracing: "Iniciar trazado",
+    stopTracing: "Detener trazado",
     operationStatus: "Estados operativos",
     adbMissing: "ADB missing",
     noEmulator: "No emulator",
@@ -451,6 +484,24 @@ const LOCALES: Record<Language, LocaleTexts> = {
     proxyPort: "Proxy port",
     refresh: "Refresh",
     prepareCa: "Prepare CA Install",
+    certInstallConsentTitle: "Certificate install permissions",
+    certInstallConsentBody:
+      "The app will copy the certificate to the emulator and attempt to open Security so you can complete manual install.",
+    certInstallFlowLabel: "Recommended flow",
+    certInstallFlowDesc:
+      "1) Copy certificate into Download. 2) Open Security. 3) In Android: Encryption & credentials > Install a certificate > CA certificate.",
+    certInstallContinue: "Continue",
+    certInstallPreparing: "Copying certificate and opening Security...",
+    exitPromptTitle: "Before exit",
+    exitPromptBody:
+      "The app will close and clear emulator proxy settings so the device keeps normal connectivity.",
+    exitPromptProxyHint:
+      "If the app is force-closed and proxy remains, run: adb shell settings put global http_proxy :0",
+    exitPromptCertHint:
+      "CA certificate removal is manual in Android: Security > Encryption & credentials.",
+    exitPromptCancel: "Cancel",
+    exitPromptConfirm: "Exit and clean",
+    exitPromptClosing: "Closing app and cleaning proxy...",
     startTracing: "Start Tracing",
     stopTracing: "Stop Tracing",
     operationStatus: "Operational states",
@@ -857,6 +908,10 @@ function App() {
   const [certInfoText, setCertInfoText] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [rulesModalOpen, setRulesModalOpen] = useState(false);
+  const [certInstallModalOpen, setCertInstallModalOpen] = useState(false);
+  const [exitModalOpen, setExitModalOpen] = useState(false);
+  const [exitBusy, setExitBusy] = useState(false);
+  const exitBusyRef = useRef(false);
 
   const [interceptTimeoutInput, setInterceptTimeoutInput] = useState("12000");
   const [interceptRulesInput, setInterceptRulesInput] = useState<InterceptionRule[]>([]);
@@ -1126,10 +1181,22 @@ function App() {
       return;
     }
 
+    setErrorText(null);
+    setCertInstallModalOpen(true);
+  }
+
+  async function runPrepareCertificateInstall() {
+    if (!selectedEmulator) {
+      setErrorText("Selecciona un emulador para preparar el certificado.");
+      return;
+    }
+
+    setCertInstallModalOpen(false);
     setBusy(true);
     setErrorText(null);
-    setInfoText("Preparando certificado...");
+    setInfoText(texts.certInstallPreparing);
     setCertInfoText(null);
+
     try {
       const result = await invoke<CertificateSetupResult>("prepare_certificate_install", {
         emulatorSerial: selectedEmulator,
@@ -1137,14 +1204,11 @@ function App() {
       setCertInfoText(
         `${result.instructions} Verificacion: ${result.verificationNote} Archivo local: ${result.certLocalPath}. Archivo en emulador: ${result.certEmulatorPath}.`,
       );
-      if (result.installationStatus === "installed") {
-        setInfoText("Certificado instalado automaticamente via ADB.");
-        updatePreferences({ certTrusted: true });
-      } else if (result.installationStatus === "pendingUserAction") {
+      if (result.installationStatus === "pendingUserAction") {
         setInfoText("Certificado copiado. Completa la confirmacion en el emulador.");
         updatePreferences({ certTrusted: false });
       } else {
-        setInfoText("No fue posible completar la instalacion automatica del certificado.");
+        setInfoText("No fue posible preparar la instalacion manual del certificado.");
         updatePreferences({ certTrusted: false });
       }
       await loadSessionAndAdb();
@@ -1153,6 +1217,28 @@ function App() {
       setInfoText(null);
     } finally {
       setBusy(false);
+    }
+  }
+
+  function handleCancelExit() {
+    if (exitBusy) return;
+    setExitModalOpen(false);
+  }
+
+  async function handleConfirmExit() {
+    if (exitBusy) return;
+
+    setExitBusy(true);
+    setErrorText(null);
+    setInfoText(texts.exitPromptClosing);
+
+    try {
+      await invoke("confirm_app_exit");
+    } catch (error) {
+      setExitBusy(false);
+      setExitModalOpen(false);
+      setInfoText(null);
+      setErrorText(toUserError(error));
     }
   }
 
@@ -1286,6 +1372,58 @@ function App() {
   }, [preferences.theme]);
 
   useEffect(() => {
+    exitBusyRef.current = exitBusy;
+  }, [exitBusy]);
+
+  useEffect(() => {
+    let unlisten: UnlistenFn | null = null;
+
+    listen("httptracer://exit-requested", () => {
+      setExitBusy(false);
+      setExitModalOpen(true);
+    })
+      .then((dispose) => {
+        unlisten = dispose;
+      })
+      .catch(() => {
+        // App exit confirmation listener is best-effort.
+      });
+
+    return () => {
+      if (unlisten) {
+        unlisten();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
+    let unlistenWindowClose: UnlistenFn | null = null;
+
+    getCurrentWindow()
+      .onCloseRequested((event) => {
+        if (exitBusyRef.current) {
+          return;
+        }
+
+        event.preventDefault();
+        setExitBusy(false);
+        setExitModalOpen(true);
+      })
+      .then((dispose) => {
+        unlistenWindowClose = dispose;
+      })
+      .catch(() => {
+        // Close interception is best-effort.
+      });
+
+    return () => {
+      if (unlistenWindowClose) {
+        unlistenWindowClose();
+      }
+    };
+  }, []);
+
+  useEffect(() => {
     if (!rulesModalOpen) return;
 
     const previousOverflow = document.body.style.overflow;
@@ -1303,6 +1441,21 @@ function App() {
       window.removeEventListener("keydown", handleKeyDown);
     };
   }, [rulesModalOpen]);
+
+  useEffect(() => {
+    if (!exitModalOpen) return;
+
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && !exitBusy) {
+        setExitModalOpen(false);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [exitModalOpen, exitBusy]);
 
   useEffect(() => {
     if (!session?.active) return;
@@ -1965,6 +2118,84 @@ function App() {
         )}
       </section>
       </>
+      )}
+
+      {exitModalOpen && (
+        <div className="modal-backdrop" onClick={handleCancelExit}>
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label={texts.exitPromptTitle}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h3>{texts.exitPromptTitle}</h3>
+              <button type="button" onClick={handleCancelExit} disabled={exitBusy}>
+                {texts.close}
+              </button>
+            </div>
+            <p>{texts.exitPromptBody}</p>
+            <section className="detail-block">
+              <p>{texts.exitPromptProxyHint}</p>
+              <p>{texts.exitPromptCertHint}</p>
+            </section>
+            <div className="actions modal-actions">
+              <button type="button" onClick={handleCancelExit} disabled={exitBusy}>
+                {texts.exitPromptCancel}
+              </button>
+              <button
+                type="button"
+                className="danger"
+                disabled={exitBusy}
+                onClick={() => void handleConfirmExit()}
+              >
+                {texts.exitPromptConfirm}
+              </button>
+            </div>
+          </section>
+        </div>
+      )}
+
+      {certInstallModalOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            if (!busy) {
+              setCertInstallModalOpen(false);
+            }
+          }}
+        >
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label={texts.certInstallConsentTitle}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h3>{texts.certInstallConsentTitle}</h3>
+              <button type="button" onClick={() => setCertInstallModalOpen(false)} disabled={busy}>
+                {texts.close}
+              </button>
+            </div>
+            <p>{texts.certInstallConsentBody}</p>
+            <section className="detail-block">
+              <h3>{texts.certInstallFlowLabel}</h3>
+              <p>{texts.certInstallFlowDesc}</p>
+            </section>
+            <div className="actions modal-actions">
+              <button
+                type="button"
+                className="primary"
+                disabled={busy}
+                onClick={() => void runPrepareCertificateInstall()}
+              >
+                {texts.certInstallContinue}
+              </button>
+            </div>
+          </section>
+        </div>
       )}
 
       {rulesModalOpen && (

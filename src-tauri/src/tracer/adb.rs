@@ -168,54 +168,123 @@ pub fn push_file_to_emulator(serial: &str, local: &Path, remote: &str) -> Result
     Ok(())
 }
 
-pub fn launch_certificate_installer(serial: &str, remote_path: &str) -> Result<(), String> {
-    let data_uri = format!("file://{remote_path}");
-    run_adb(&[
-        "-s",
-        serial,
-        "shell",
-        "am",
-        "start",
-        "-a",
-        "android.credentials.INSTALL",
-        "-d",
-        &data_uri,
-        "-t",
-        "application/x-x509-ca-cert",
-    ])?;
-    Ok(())
-}
-
-pub fn adb_root(serial: &str) -> Result<String, String> {
-    run_adb(&["-s", serial, "root"])
-}
-
-pub fn adb_remount(serial: &str) -> Result<String, String> {
-    run_adb(&["-s", serial, "remount"])
-}
-
-pub fn chmod_remote_file(serial: &str, remote_path: &str, mode: &str) -> Result<(), String> {
-    run_adb(&["-s", serial, "shell", "chmod", mode, remote_path])?;
-    Ok(())
-}
-
-pub fn chown_remote_file(serial: &str, remote_path: &str, owner: &str) -> Result<(), String> {
-    run_adb(&["-s", serial, "shell", "chown", owner, remote_path])?;
-    Ok(())
-}
-
-pub fn remote_file_exists(serial: &str, remote_path: &str) -> Result<bool, String> {
-    match run_adb(&["-s", serial, "shell", "ls", remote_path]) {
-        Ok(_) => Ok(true),
-        Err(err)
-            if err.contains("No such file")
-                || err.contains("not found")
-                || err.contains("No such") =>
-        {
-            Ok(false)
-        }
-        Err(err) => Err(err),
+pub fn open_security_settings(serial: &str) -> Result<(), String> {
+    struct LaunchAttempt {
+        label: &'static str,
+        args: Vec<String>,
+        required_markers: &'static [&'static str],
+        forbidden_markers: &'static [&'static str],
     }
+
+    let attempts = vec![
+        LaunchAttempt {
+            label: "Install a certificate (SubSettings fragment)",
+            args: vec![
+                "-n".to_string(),
+                "com.android.settings/.SubSettings".to_string(),
+                "--es".to_string(),
+                ":settings:show_fragment".to_string(),
+                "com.android.settings.security.InstallCertificateFromStorage".to_string(),
+                "--ez".to_string(),
+                ":settings:show_fragment_as_subsetting".to_string(),
+                "true".to_string(),
+            ],
+            required_markers: &["activity: com.android.settings/.subsettings"],
+            forbidden_markers: &[],
+        },
+        LaunchAttempt {
+            label: "Encryption & credentials (SubSettings fragment)",
+            args: vec![
+                "-n".to_string(),
+                "com.android.settings/.SubSettings".to_string(),
+                "--es".to_string(),
+                ":settings:show_fragment".to_string(),
+                "com.android.settings.security.EncryptionAndCredential".to_string(),
+                "--ez".to_string(),
+                ":settings:show_fragment_as_subsetting".to_string(),
+                "true".to_string(),
+            ],
+            required_markers: &["activity: com.android.settings/.subsettings"],
+            forbidden_markers: &[],
+        },
+        LaunchAttempt {
+            label: "Security advanced (AOSP)",
+            args: vec![
+                "-a".to_string(),
+                "com.android.settings.security.SECURITY_ADVANCED_SETTINGS".to_string(),
+            ],
+            required_markers: &[],
+            forbidden_markers: &[],
+        },
+        LaunchAttempt {
+            label: "Security advanced (Google)",
+            args: vec![
+                "-a".to_string(),
+                "com.google.android.settings.security.SECURITY_ADVANCED_SETTINGS".to_string(),
+            ],
+            required_markers: &[],
+            forbidden_markers: &[],
+        },
+        LaunchAttempt {
+            label: "Security dashboard",
+            args: vec![
+                "-a".to_string(),
+                "android.settings.SECURITY_SETTINGS".to_string(),
+            ],
+            required_markers: &[],
+            forbidden_markers: &[],
+        },
+        LaunchAttempt {
+            label: "Trusted Credentials (user)",
+            args: vec![
+                "-a".to_string(),
+                "com.android.settings.TRUSTED_CREDENTIALS_USER".to_string(),
+            ],
+            required_markers: &[],
+            forbidden_markers: &[],
+        },
+        LaunchAttempt {
+            label: "Trusted Credentials",
+            args: vec![
+                "-a".to_string(),
+                "com.android.settings.TRUSTED_CREDENTIALS".to_string(),
+            ],
+            required_markers: &[],
+            forbidden_markers: &[],
+        },
+    ];
+
+    let mut failures = Vec::new();
+    for attempt in attempts {
+        match run_adb_am_start(serial, &attempt.args) {
+            Ok(output) => {
+                let normalized = output.to_ascii_lowercase();
+                if contains_any_marker(&normalized, attempt.forbidden_markers) {
+                    failures.push(format!(
+                        "{}: opened unsupported target ({})",
+                        attempt.label, output
+                    ));
+                    continue;
+                }
+                if !attempt.required_markers.is_empty()
+                    && !contains_any_marker(&normalized, attempt.required_markers)
+                {
+                    failures.push(format!(
+                        "{}: target did not match expected screen ({})",
+                        attempt.label, output
+                    ));
+                    continue;
+                }
+                return Ok(());
+            }
+            Err(err) => failures.push(format!("{}: {err}", attempt.label)),
+        }
+    }
+
+    Err(format!(
+        "No fue posible abrir Install a certificate ni Encryption & credentials automaticamente. {}",
+        failures.join(" | ")
+    ))
 }
 
 fn list_emulators(adb_binary: &str) -> Result<(Vec<EmulatorDevice>, usize), String> {
@@ -252,6 +321,70 @@ fn list_devices(adb_binary: &str) -> Result<Vec<DeviceEntry>, String> {
 fn run_adb(args: &[&str]) -> Result<String, String> {
     let adb_binary = resolve_adb_binary()?;
     run_adb_with_binary(&adb_binary, args)
+}
+
+fn run_adb_am_start(serial: &str, extra_args: &[String]) -> Result<String, String> {
+    let adb_binary = resolve_adb_binary()?;
+    let mut args = vec![
+        "-s".to_string(),
+        serial.to_string(),
+        "shell".to_string(),
+        "am".to_string(),
+        "start".to_string(),
+        "-W".to_string(),
+    ];
+    args.extend(extra_args.iter().cloned());
+
+    let output = Command::new(&adb_binary)
+        .args(args.iter().map(String::as_str))
+        .output()
+        .map_err(|_| format!("Failed to execute adb at {adb_binary}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{}\n{}", stdout.trim(), stderr.trim())
+        .trim()
+        .to_string();
+
+    if !output.status.success() {
+        return if combined.is_empty() {
+            Err(format!(
+                "adb command failed: {adb_binary} {}",
+                args.join(" ")
+            ))
+        } else {
+            Err(combined)
+        };
+    }
+
+    if adb_am_start_failed(&combined) {
+        return Err(combined);
+    }
+
+    Ok(combined)
+}
+
+fn adb_am_start_failed(output: &str) -> bool {
+    let normalized = output.to_ascii_lowercase();
+    if normalized.contains("status: ok") {
+        return false;
+    }
+
+    let markers = [
+        "error:",
+        "exception",
+        "unable to resolve intent",
+        "permission denied",
+        "securityexception",
+    ];
+
+    markers.iter().any(|marker| normalized.contains(marker))
+}
+
+fn contains_any_marker(output_normalized: &str, markers: &[&str]) -> bool {
+    markers
+        .iter()
+        .any(|marker| output_normalized.contains(&marker.to_ascii_lowercase()))
 }
 
 fn run_adb_with_binary(adb_binary: &str, args: &[&str]) -> Result<String, String> {
