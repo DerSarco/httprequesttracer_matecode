@@ -178,22 +178,34 @@ pub fn open_security_settings(serial: &str) -> Result<(), String> {
 
     let attempts = vec![
         LaunchAttempt {
-            label: "Install a certificate (AOSP action)",
-            args: vec![
-                "-a".to_string(),
-                "com.android.credentials.INSTALL".to_string(),
-            ],
-            required_markers: &["credentialstorage"],
-            forbidden_markers: &["documentsui", "pickactivity"],
-        },
-        LaunchAttempt {
-            label: "Install a certificate (explicit activity)",
+            label: "Install a certificate (SubSettings fragment)",
             args: vec![
                 "-n".to_string(),
-                "com.android.settings/.security.CredentialStorage".to_string(),
+                "com.android.settings/.SubSettings".to_string(),
+                "--es".to_string(),
+                ":settings:show_fragment".to_string(),
+                "com.android.settings.security.InstallCertificateFromStorage".to_string(),
+                "--ez".to_string(),
+                ":settings:show_fragment_as_subsetting".to_string(),
+                "true".to_string(),
             ],
-            required_markers: &["credentialstorage"],
-            forbidden_markers: &["documentsui", "pickactivity"],
+            required_markers: &["activity: com.android.settings/.subsettings"],
+            forbidden_markers: &[],
+        },
+        LaunchAttempt {
+            label: "Encryption & credentials (SubSettings fragment)",
+            args: vec![
+                "-n".to_string(),
+                "com.android.settings/.SubSettings".to_string(),
+                "--es".to_string(),
+                ":settings:show_fragment".to_string(),
+                "com.android.settings.security.EncryptionAndCredential".to_string(),
+                "--ez".to_string(),
+                ":settings:show_fragment_as_subsetting".to_string(),
+                "true".to_string(),
+            ],
+            required_markers: &["activity: com.android.settings/.subsettings"],
+            forbidden_markers: &[],
         },
         LaunchAttempt {
             label: "Security advanced (AOSP)",
@@ -239,15 +251,6 @@ pub fn open_security_settings(serial: &str) -> Result<(), String> {
             ],
             required_markers: &[],
             forbidden_markers: &[],
-        },
-        LaunchAttempt {
-            label: "Install a certificate (legacy action)",
-            args: vec![
-                "-a".to_string(),
-                "android.credentials.INSTALL".to_string(),
-            ],
-            required_markers: &["credentialstorage"],
-            forbidden_markers: &["documentsui", "pickactivity"],
         },
     ];
 

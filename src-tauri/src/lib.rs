@@ -9,7 +9,7 @@ use std::{
     time::Duration,
 };
 
-use tauri::{Manager, State, WindowEvent};
+use tauri::{Emitter, Manager, RunEvent, State, WindowEvent};
 use tracer::{
     adb_controller::AdbStatus,
     cert::CertificateSetupResult,
@@ -20,6 +20,9 @@ use tracer::{
     },
     session::{TraceSession, TraceSessionSnapshot},
 };
+
+#[cfg(target_os = "macos")]
+use tauri::menu::{AboutMetadata, Menu, MenuItem, PredefinedMenuItem, Submenu};
 
 struct AppState {
     session: Mutex<TraceSession>,
@@ -44,6 +47,8 @@ impl Default for AppState {
 }
 
 const APP_EXIT_CLEANUP_TIMEOUT_MS: u64 = 8_000;
+#[cfg(target_os = "macos")]
+const MENU_REQUEST_QUIT_ID: &str = "httptracer.request-quit";
 
 #[tauri::command]
 fn get_adb_status() -> Result<AdbStatus, String> {
@@ -308,6 +313,12 @@ async fn stop_tracing(state: State<'_, AppState>) -> Result<TraceSessionSnapshot
     Ok(session.snapshot())
 }
 
+#[tauri::command]
+fn confirm_app_exit(app_handle: tauri::AppHandle) -> Result<(), String> {
+    begin_shutdown(app_handle);
+    Ok(())
+}
+
 async fn cleanup_on_app_exit(app_handle: tauri::AppHandle) {
     let runtime = {
         let state = app_handle.state::<AppState>();
@@ -416,28 +427,142 @@ fn cleanup_emulator_proxy_blocking(app_handle: &tauri::AppHandle) -> Vec<String>
     logs
 }
 
+fn request_app_exit_confirmation(app_handle: &tauri::AppHandle) {
+    let is_shutting_down = {
+        let state = app_handle.state::<AppState>();
+        state.shutdown_in_progress.load(Ordering::SeqCst)
+    };
+    if is_shutting_down {
+        return;
+    }
+
+    let _ = app_handle.emit("httptracer://exit-requested", ());
+}
+
+fn begin_shutdown(app_handle: tauri::AppHandle) {
+    let should_cleanup = {
+        let state = app_handle.state::<AppState>();
+        !state.shutdown_in_progress.swap(true, Ordering::SeqCst)
+    };
+    if !should_cleanup {
+        return;
+    }
+
+    tauri::async_runtime::spawn(async move {
+        cleanup_on_app_exit(app_handle.clone()).await;
+        app_handle.exit(0);
+    });
+}
+
+#[cfg(target_os = "macos")]
+fn build_macos_menu<R: tauri::Runtime>(app_handle: &tauri::AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let pkg_info = app_handle.package_info();
+    let config = app_handle.config();
+    let about_metadata = AboutMetadata {
+        name: Some(pkg_info.name.clone()),
+        version: Some(pkg_info.version.to_string()),
+        copyright: config.bundle.copyright.clone(),
+        authors: config.bundle.publisher.clone().map(|p| vec![p]),
+        ..Default::default()
+    };
+
+    let app_submenu = Submenu::with_items(
+        app_handle,
+        pkg_info.name.clone(),
+        true,
+        &[
+            &PredefinedMenuItem::about(app_handle, None, Some(about_metadata))?,
+            &PredefinedMenuItem::separator(app_handle)?,
+            &PredefinedMenuItem::services(app_handle, None)?,
+            &PredefinedMenuItem::separator(app_handle)?,
+            &PredefinedMenuItem::hide(app_handle, None)?,
+            &PredefinedMenuItem::hide_others(app_handle, None)?,
+            &PredefinedMenuItem::separator(app_handle)?,
+            &MenuItem::with_id(
+                app_handle,
+                MENU_REQUEST_QUIT_ID,
+                format!("Quit {}", pkg_info.name),
+                true,
+                Some("CmdOrCtrl+Q"),
+            )?,
+        ],
+    )?;
+
+    let file_submenu = Submenu::with_items(
+        app_handle,
+        "File",
+        true,
+        &[&PredefinedMenuItem::close_window(app_handle, None)?],
+    )?;
+
+    let edit_submenu = Submenu::with_items(
+        app_handle,
+        "Edit",
+        true,
+        &[
+            &PredefinedMenuItem::undo(app_handle, None)?,
+            &PredefinedMenuItem::redo(app_handle, None)?,
+            &PredefinedMenuItem::separator(app_handle)?,
+            &PredefinedMenuItem::cut(app_handle, None)?,
+            &PredefinedMenuItem::copy(app_handle, None)?,
+            &PredefinedMenuItem::paste(app_handle, None)?,
+            &PredefinedMenuItem::select_all(app_handle, None)?,
+        ],
+    )?;
+
+    let view_submenu = Submenu::with_items(
+        app_handle,
+        "View",
+        true,
+        &[&PredefinedMenuItem::fullscreen(app_handle, None)?],
+    )?;
+
+    let window_submenu = Submenu::with_items(
+        app_handle,
+        "Window",
+        true,
+        &[
+            &PredefinedMenuItem::minimize(app_handle, None)?,
+            &PredefinedMenuItem::maximize(app_handle, None)?,
+            &PredefinedMenuItem::separator(app_handle)?,
+            &PredefinedMenuItem::close_window(app_handle, None)?,
+        ],
+    )?;
+
+    let help_submenu = Submenu::with_items(app_handle, "Help", true, &[])?;
+
+    Menu::with_items(
+        app_handle,
+        &[
+            &app_submenu,
+            &file_submenu,
+            &edit_submenu,
+            &view_submenu,
+            &window_submenu,
+            &help_submenu,
+        ],
+    )
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(AppState::default())
         .on_window_event(|window, event| {
             if let WindowEvent::CloseRequested { api, .. } = event {
-                let app_handle = window.app_handle().clone();
-                let should_cleanup = {
+                let app_handle = window.app_handle();
+                let is_shutting_down = {
                     let state = app_handle.state::<AppState>();
-                    !state.shutdown_in_progress.swap(true, Ordering::SeqCst)
+                    state.shutdown_in_progress.load(Ordering::SeqCst)
                 };
 
-                if !should_cleanup {
+                if is_shutting_down {
                     return;
                 }
 
                 api.prevent_close();
-                tauri::async_runtime::spawn(async move {
-                    cleanup_on_app_exit(app_handle.clone()).await;
-                    app_handle.exit(0);
-                });
+                request_app_exit_confirmation(&app_handle);
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -450,8 +575,34 @@ pub fn run() {
             decide_intercept_request,
             prepare_certificate_install,
             start_tracing,
-            stop_tracing
-        ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+            stop_tracing,
+            confirm_app_exit
+        ]);
+
+    #[cfg(target_os = "macos")]
+    let builder = builder
+        .menu(|app_handle| build_macos_menu(app_handle))
+        .on_menu_event(|app_handle, event| {
+            if event.id() == MENU_REQUEST_QUIT_ID {
+                request_app_exit_confirmation(app_handle);
+            }
+        });
+
+    let app = builder
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application");
+
+    app.run(|app_handle, event| {
+        if let RunEvent::ExitRequested { api, .. } = event {
+            let is_shutting_down = {
+                let state = app_handle.state::<AppState>();
+                state.shutdown_in_progress.load(Ordering::SeqCst)
+            };
+
+            if !is_shutting_down {
+                api.prevent_exit();
+                request_app_exit_confirmation(app_handle);
+            }
+        }
+    });
 }
