@@ -63,6 +63,18 @@ Bundle output:
 - Detailed guide: `docs/release-macos-playbook.md`
 - Packaging notes: `docs/mvp-09-packaging-guide.md`
 
+## First launch on macOS (quarantine workaround)
+
+Until app signing + notarization is enabled, macOS may block the downloaded app with a
+"damaged and can't be opened" message.
+
+If that happens, run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/HTTP Request Tracer.app"
+open "/Applications/HTTP Request Tracer.app"
+```
+
 ## Security and trust notes
 
 - HTTPS capture requires trusting the generated local CA in the emulator.
