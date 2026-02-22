@@ -170,11 +170,11 @@ pub fn push_file_to_emulator(serial: &str, local: &Path, remote: &str) -> Result
 
 pub fn open_security_settings(serial: &str) -> Result<(), String> {
     let attempts: [(&str, &str); 2] = [
-        ("Pantalla Security", "android.settings.SECURITY_SETTINGS"),
         (
-            "Pantalla Trusted Credentials",
-            "android.settings.TRUSTED_CREDENTIALS_USER",
+            "Pantalla Install certificate (Encryption & credentials)",
+            "android.credentials.INSTALL",
         ),
+        ("Pantalla Security", "android.settings.SECURITY_SETTINGS"),
     ];
 
     let mut failures = Vec::new();
@@ -271,12 +271,16 @@ fn run_adb_am_start(serial: &str, extra_args: &[String]) -> Result<String, Strin
 
 fn adb_am_start_failed(output: &str) -> bool {
     let normalized = output.to_ascii_lowercase();
+    if normalized.contains("status: ok") {
+        return false;
+    }
+
     let markers = [
         "error:",
         "exception",
         "unable to resolve intent",
-        "activity not started",
         "permission denied",
+        "securityexception",
     ];
 
     markers.iter().any(|marker| normalized.contains(marker))
