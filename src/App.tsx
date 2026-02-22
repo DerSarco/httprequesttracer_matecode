@@ -1583,20 +1583,6 @@ function App() {
                 <span className="toggle-slider" aria-hidden="true" />
               </label>
             </div>
-            <label>
-              {texts.interceptionTimeout}
-              <input
-                value={interceptTimeoutInput}
-                onChange={(event) => setInterceptTimeoutInput(event.target.value.replace(/[^\d]/g, ""))}
-                disabled={busy || interceptBusy}
-              />
-            </label>
-            <button
-              disabled={busy || interceptBusy}
-              onClick={() => handleApplyInterceptionConfig(Boolean(interception?.enabled))}
-            >
-              {texts.applyInterception}
-            </button>
             <button disabled={busy || interceptBusy} onClick={() => setRulesModalOpen(true)}>
               {texts.manageRules}
             </button>
@@ -1979,6 +1965,14 @@ function App() {
                 {texts.close}
               </button>
             </div>
+            <label className="modal-timeout-field">
+              {texts.interceptionTimeout}
+              <input
+                value={interceptTimeoutInput}
+                onChange={(event) => setInterceptTimeoutInput(event.target.value.replace(/[^\d]/g, ""))}
+                disabled={busy || interceptBusy}
+              />
+            </label>
             {interceptRulesInput.length === 0 && <p className="muted">{texts.interceptionRulesEmptyHint}</p>}
             {interceptRulesInput.length > 0 && (
               <div className="interception-rules">
