@@ -14,10 +14,17 @@
 1. Download the zip that matches your Mac architecture.
 2. Unzip and move `HTTP Request Tracer.app` to `Applications`.
 3. Open the app and allow execution in macOS Security settings if prompted.
+4. If macOS shows "damaged and can't be opened", run:
+
+```bash
+xattr -dr com.apple.quarantine "/Applications/HTTP Request Tracer.app"
+open "/Applications/HTTP Request Tracer.app"
+```
 
 ## Known limitations
 - Certificate install in Android emulator still requires user interaction.
 - Project is in MVP stage; report edge cases in Issues.
+- App is not yet notarized for macOS distribution.
 
 ## Validation checklist
 - App starts and detects ADB + emulator.
