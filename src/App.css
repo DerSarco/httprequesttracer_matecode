@@ -311,6 +311,46 @@ h3 {
   font-size: 0.95rem;
 }
 
+.workspace-tabs-panel {
+  padding: 10px 12px;
+}
+
+.workspace-tabs {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.workspace-tabs button {
+  padding: 8px 12px;
+  border-radius: 10px;
+  font-size: 0.84rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.workspace-tabs button.active {
+  background: rgba(137, 190, 162, 0.2);
+  border-color: #9ebda8;
+  color: var(--text);
+}
+
+.tab-count {
+  min-width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.72rem;
+  font-weight: 700;
+  background: var(--brand);
+  color: #ffffff;
+  padding: 0 4px;
+}
+
 .metrics {
   list-style: none;
   margin: 0;
@@ -361,7 +401,7 @@ h3 {
   flex-wrap: wrap;
 }
 
-.interception-controls label {
+.interception-controls label:not(.toggle-switch) {
   min-width: 140px;
 }
 
@@ -376,8 +416,9 @@ h3 {
 
 .toggle-switch {
   position: relative;
-  width: 54px;
-  height: 30px;
+  width: 36px;
+  min-width: 36px;
+  height: 20px;
   display: inline-flex;
 }
 
@@ -399,8 +440,8 @@ h3 {
 .toggle-slider::before {
   content: "";
   position: absolute;
-  width: 22px;
-  height: 22px;
+  width: 12px;
+  height: 12px;
   left: 3px;
   top: 3px;
   border-radius: 50%;
@@ -414,7 +455,7 @@ h3 {
 }
 
 .toggle-switch input:checked + .toggle-slider::before {
-  transform: translateX(24px);
+  transform: translateX(16px);
   background: #ffffff;
 }
 
