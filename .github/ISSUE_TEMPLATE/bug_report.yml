@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a reproducible defect
+title: "[Bug]: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug. Please provide enough detail to reproduce it quickly.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened and what did you expect?
+      placeholder: A concise description of the issue.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Include exact steps and data when possible.
+      placeholder: |
+        1. Open app
+        2. Click ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Provide host and emulator details.
+      placeholder: |
+        App version:
+        macOS version:
+        CPU architecture (arm64/x64):
+        Node version:
+        ADB version:
+        Emulator/device:
+    validations:
+      required: true
+  - type: dropdown
+    id: security_impact
+    attributes:
+      label: Security impact
+      description: Does this bug expose sensitive data or allow unsafe behavior?
+      options:
+        - Unknown
+        - No
+        - Yes
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots
+      description: Paste sanitized logs or screenshots. Do not include secrets/tokens.
+      render: shell

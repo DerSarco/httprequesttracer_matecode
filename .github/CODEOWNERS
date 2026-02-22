@@ -1,0 +1,22 @@
+# Default ownership
+* @DerSarco
+
+# Security and release-critical paths
+/.github/CODEOWNERS @DerSarco
+/.github/workflows/* @DerSarco
+/.github/release-notes-template.md @DerSarco
+/SECURITY.md @DerSarco
+/CONTRIBUTING.md @DerSarco
+/LICENSE @DerSarco
+/THIRD_PARTY_NOTICES.md @DerSarco
+
+# Runtime and tracing core
+/src-tauri/src/lib.rs @DerSarco
+/src-tauri/src/tracer/* @DerSarco
+/src-tauri/Cargo.toml @DerSarco
+/src-tauri/Cargo.lock @DerSarco
+/src-tauri/tauri.conf.json @DerSarco
+
+# Dependency and packaging definitions
+/package.json @DerSarco
+/package-lock.json @DerSarco

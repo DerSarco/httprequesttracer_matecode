@@ -1,0 +1,43 @@
+name: Feature request
+description: Suggest a new capability or improvement
+title: "[Feature]: "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the suggestion. Keep proposals specific and scoped.
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem statement
+      description: What pain point are you solving?
+      placeholder: Describe the current limitation.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the expected behavior and UX.
+      placeholder: Explain how this should work.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+      description: What alternatives did you evaluate?
+      placeholder: Optional alternatives.
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk level
+      description: Estimate implementation risk for security/stability.
+      options:
+        - Low
+        - Medium
+        - High
+    validations:
+      required: true
