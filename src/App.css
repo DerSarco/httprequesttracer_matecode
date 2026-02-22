@@ -537,6 +537,11 @@ h3 {
   gap: 10px;
 }
 
+.modal-timeout-field {
+  margin-top: 10px;
+  max-width: 240px;
+}
+
 .modal-actions {
   justify-content: flex-end;
   margin-top: 12px;
