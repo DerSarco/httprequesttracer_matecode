@@ -1,880 +1,61 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import {
+  clearCapturedRequests,
+  confirmAppExit,
+  configureInterception,
+  decideInterceptRequest,
+  getAdbStatus,
+  getCapturedRequests,
+  getInterceptionState,
+  getSessionState,
+  prepareCertificateInstall,
+  startTracing,
+  stopTracing,
+} from "./shared/api/tauriClient";
+import { DEFAULT_PROXY_HOST, DEFAULT_PROXY_PORT, DETAIL_TABS, type DetailTab } from "./shared/config";
+import type {
+  AdbStatus,
+  CapturedExchange,
+  FontScale,
+  InterceptDecisionInput,
+  InterceptionConfigInput,
+  InterceptionRule,
+  InterceptionSnapshot,
+  Language,
+  OperationalState,
+  SortDirection,
+  SortField,
+  ThemeMode,
+  TraceSessionSnapshot,
+  UserPreferences,
+  WorkspaceTab,
+} from "./shared/contracts";
+import { LOCALES } from "./shared/i18n/locales";
+import { loadPreferences, persistPreferences } from "./shared/preferences";
+import { copyToClipboard } from "./shared/utils/clipboard";
+import {
+  buildCurlCommand,
+  createEmptyRule,
+  createRuleId,
+  formatByteSize,
+  formatHeadersAsText,
+  formatRequestTimestamp,
+  formatStartTime,
+  getHeaderValue,
+  isSensitiveHeader,
+  maskSensitiveValue,
+  matchesStatusFilter,
+  parseCookieEntries,
+  parseHeaderLines,
+  parseParamEntries,
+  toUserError,
+} from "./shared/utils/requestHelpers";
 import "./App.css";
 
-type EmulatorDevice = {
-  serial: string;
-};
-
-type AdbStatus = {
-  adbAvailable: boolean;
-  adbPath: string | null;
-  adbVersion: string | null;
-  emulators: EmulatorDevice[];
-  message: string | null;
-};
-
-type TraceSessionSnapshot = {
-  active: boolean;
-  emulatorSerial: string | null;
-  proxyAddress: string | null;
-  startedAtUnixMs: number | null;
-  caCertificatePath: string | null;
-  lastError: string | null;
-};
-
-type HeaderEntry = {
-  name: string;
-  value: string;
-};
-
-type CapturedExchange = {
-  id: number;
-  startedAtUnixMs: number;
-  durationMs: number;
-  method: string;
-  url: string;
-  host: string;
-  path: string;
-  statusCode: number;
-  requestHeaders: HeaderEntry[];
-  responseHeaders: HeaderEntry[];
-  requestBody: string | null;
-  responseBody: string | null;
-  requestBodySize: number;
-  responseBodySize: number;
-  intercepted?: boolean;
-  interceptStatus?: string | null;
-  originalMethod?: string | null;
-  originalUrl?: string | null;
-};
-
-type CertificateSetupResult = {
-  certLocalPath: string;
-  certEmulatorPath: string;
-  installerLaunched: boolean;
-  installationStatus: "installed" | "pendingUserAction" | "failed";
-  verificationNote: string;
-  instructions: string;
-};
-
-type PendingInterceptRequest = {
-  id: number;
-  startedAtUnixMs: number;
-  method: string;
-  url: string;
-  host: string;
-  path: string;
-  headers: HeaderEntry[];
-  body: string | null;
-  bodySize: number;
-  status: string;
-  lastError: string | null;
-};
-
-type InterceptionSnapshot = {
-  enabled: boolean;
-  timeoutMs: number;
-  rules: InterceptionRule[];
-  pendingCount: number;
-  pendingRequests: PendingInterceptRequest[];
-};
-
-type InterceptionRule = {
-  id: string;
-  enabled: boolean;
-  hostContains: string;
-  pathContains: string;
-  method: string;
-};
-
-type InterceptionConfigInput = {
-  enabled: boolean;
-  timeoutMs?: number;
-  rules?: InterceptionRule[];
-};
-
-type InterceptDecisionInput = {
-  requestId: number;
-  action: "forward" | "drop";
-  method?: string;
-  url?: string;
-  headers?: HeaderEntry[];
-  body?: string;
-  query?: string;
-  cookies?: string;
-};
-
-type Language = "es" | "en";
-type ThemeMode = "light" | "dark";
-type FontScale = "small" | "medium" | "large";
-type SortField = "id" | "startedAtUnixMs";
-type SortDirection = "asc" | "desc";
-type WorkspaceTab = "requests" | "interception";
-
-type UserPreferences = {
-  language: Language;
-  theme: ThemeMode;
-  fontScale: FontScale;
-  showSensitiveData: boolean;
-  certTrusted: boolean;
-};
-
-type OperationalState = {
-  key: string;
-  level: "ok" | "warn" | "error";
-  title: string;
-  description: string;
-  action: string;
-};
-
-type LocaleTexts = {
-  headerTitle: string;
-  headerSubhead: string;
-  settings: string;
-  settingsTitle: string;
-  language: string;
-  theme: string;
-  fontSize: string;
-  sensitiveData: string;
-  certTrusted: string;
-  closeSettings: string;
-  light: string;
-  dark: string;
-  fontSmall: string;
-  fontMedium: string;
-  fontLarge: string;
-  showSensitive: string;
-  hideSensitive: string;
-  markCertTrusted: string;
-  markCertPending: string;
-  controls: string;
-  emulator: string;
-  proxyHost: string;
-  proxyPort: string;
-  refresh: string;
-  prepareCa: string;
-  certInstallConsentTitle: string;
-  certInstallConsentBody: string;
-  certInstallFlowLabel: string;
-  certInstallFlowDesc: string;
-  certInstallContinue: string;
-  certInstallPreparing: string;
-  exitPromptTitle: string;
-  exitPromptBody: string;
-  exitPromptProxyHint: string;
-  exitPromptCertHint: string;
-  exitPromptCancel: string;
-  exitPromptConfirm: string;
-  exitPromptClosing: string;
-  startTracing: string;
-  stopTracing: string;
-  operationStatus: string;
-  adbMissing: string;
-  noEmulator: string;
-  certNotTrusted: string;
-  tracingActive: string;
-  ready: string;
-  adbMissingDesc: string;
-  noEmulatorDesc: string;
-  certNotTrustedDesc: string;
-  tracingActiveDesc: string;
-  readyDesc: string;
-  adbMissingAction: string;
-  noEmulatorAction: string;
-  certNotTrustedAction: string;
-  tracingActiveAction: string;
-  readyAction: string;
-  adbPanel: string;
-  sessionPanel: string;
-  adbAvailable: string;
-  adbVersion: string;
-  adbPath: string;
-  emulatorsConnected: string;
-  state: string;
-  activeEmulator: string;
-  proxyApplied: string;
-  localCa: string;
-  startedAt: string;
-  active: string;
-  stopped: string;
-  requestsTitle: string;
-  workspaceTabRequests: string;
-  workspaceTabInterception: string;
-  clearSession: string;
-  filterText: string;
-  filterMethod: string;
-  filterStatus: string;
-  allMethods: string;
-  clearFilters: string;
-  sortBy: string;
-  sortDirection: string;
-  sortById: string;
-  sortByTime: string;
-  asc: string;
-  desc: string;
-  timestamp: string;
-  method: string;
-  host: string;
-  path: string;
-  status: string;
-  duration: string;
-  noTraffic: string;
-  noFilterResults: string;
-  detailTitle: string;
-  selectRequest: string;
-  detailsFor: string;
-  copied: string;
-  copyFailed: string;
-  copyUrl: string;
-  exportCurl: string;
-  requestTab: string;
-  responseTab: string;
-  headersTab: string;
-  cookiesTab: string;
-  paramsTab: string;
-  timingTab: string;
-  requestSize: string;
-  responseSize: string;
-  noBody: string;
-  copyContent: string;
-  requestHeaders: string;
-  responseHeaders: string;
-  noHeaders: string;
-  noCookies: string;
-  noParams: string;
-  queryLabel: string;
-  requestBodySize: string;
-  responseBodySize: string;
-  interceptStatus: string;
-  originalRequest: string;
-  interceptionTitle: string;
-  interceptionEnabled: string;
-  interceptionTimeout: string;
-  interceptionHostFilter: string;
-  interceptionPathFilter: string;
-  interceptionMethodFilter: string;
-  interceptionAllMethods: string;
-  interceptionRuleEnabled: string;
-  interceptionRules: string;
-  interceptionRulesEmptyHint: string;
-  manageRules: string;
-  close: string;
-  addRule: string;
-  removeRule: string;
-  applyInterception: string;
-  pendingInterceptions: string;
-  noPendingInterceptions: string;
-  interceptEditor: string;
-  editorHeaders: string;
-  editorBody: string;
-  editorQuery: string;
-  editorCookies: string;
-  forwardRequest: string;
-  dropRequest: string;
-  intercepted: string;
-  timeout: string;
-  dropped: string;
-};
-
-const DEFAULT_PROXY_HOST = "10.0.2.2";
-const DEFAULT_PROXY_PORT = "8877";
-const DETAIL_TABS = ["request", "response", "headers", "cookies", "params", "timing"] as const;
-type DetailTab = (typeof DETAIL_TABS)[number];
-const PREFERENCES_STORAGE_KEY = "http-request-tracer.preferences.v1";
-
-const DEFAULT_PREFERENCES: UserPreferences = {
-  language: "es",
-  theme: "light",
-  fontScale: "medium",
-  showSensitiveData: false,
-  certTrusted: false,
-};
-
-const SENSITIVE_HEADERS = new Set([
-  "authorization",
-  "proxy-authorization",
-  "cookie",
-  "set-cookie",
-  "x-api-key",
-  "x-auth-token",
-]);
-
-const LOCALES: Record<Language, LocaleTexts> = {
-  es: {
-    headerTitle: "Android Emulator Proxy Console",
-    headerSubhead:
-      "Trazado HTTP/HTTPS local para emuladores Android, con captura, filtros, detalle e interceptación editable.",
-    settings: "Configuracion",
-    settingsTitle: "Preferencias",
-    language: "Idioma",
-    theme: "Tema",
-    fontSize: "Tamano de fuente",
-    sensitiveData: "Datos sensibles",
-    certTrusted: "CA confiada en emulador",
-    closeSettings: "Cerrar configuracion",
-    light: "Claro",
-    dark: "Oscuro",
-    fontSmall: "Chico",
-    fontMedium: "Medio",
-    fontLarge: "Grande",
-    showSensitive: "Mostrar valores reales",
-    hideSensitive: "Ocultar valores sensibles",
-    markCertTrusted: "Confiada",
-    markCertPending: "Pendiente",
-    controls: "Controles de tracing",
-    emulator: "Emulador",
-    proxyHost: "Proxy host (emulador)",
-    proxyPort: "Proxy port",
-    refresh: "Actualizar",
-    prepareCa: "Preparar instalacion de CA",
-    certInstallConsentTitle: "Permisos para instalacion de certificado",
-    certInstallConsentBody:
-      "La app copiara el certificado al emulador e intentara abrir Security para que completes la instalacion manual.",
-    certInstallFlowLabel: "Flujo recomendado",
-    certInstallFlowDesc:
-      "1) Copiar certificado en Download. 2) Abrir Security. 3) En Android: Encryption & credentials > Install a certificate > CA certificate.",
-    certInstallContinue: "Continue",
-    certInstallPreparing: "Copiando certificado y abriendo Security...",
-    exitPromptTitle: "Antes de salir",
-    exitPromptBody:
-      "Vamos a cerrar la app y limpiar el proxy del emulador para evitar que quede sin internet.",
-    exitPromptProxyHint:
-      "Si cierras forzado y el proxy no se limpia, ejecuta: adb shell settings put global http_proxy :0",
-    exitPromptCertHint:
-      "El certificado CA se elimina manualmente en Android: Security > Encryption & credentials.",
-    exitPromptCancel: "Cancelar",
-    exitPromptConfirm: "Salir y limpiar",
-    exitPromptClosing: "Cerrando app y limpiando proxy...",
-    startTracing: "Iniciar trazado",
-    stopTracing: "Detener trazado",
-    operationStatus: "Estados operativos",
-    adbMissing: "ADB missing",
-    noEmulator: "No emulator",
-    certNotTrusted: "Cert not trusted",
-    tracingActive: "Tracing active",
-    ready: "Ready",
-    adbMissingDesc: "No se encontró adb local para controlar el emulador.",
-    noEmulatorDesc: "ADB responde, pero no hay emuladores online.",
-    certNotTrustedDesc: "La CA local aun no fue marcada como confiada para HTTPS.",
-    tracingActiveDesc: "El proxy MITM esta activo y capturando requests.",
-    readyDesc: "ADB y emulador listos para iniciar trazado.",
-    adbMissingAction: "Instala platform-tools o define ADB_PATH.",
-    noEmulatorAction: "Inicia un AVD y verifica `adb devices`.",
-    certNotTrustedAction: "Instala la CA en el emulador y marca como confiada.",
-    tracingActiveAction: "Puedes inspeccionar, filtrar o interceptar requests.",
-    readyAction: "Presiona Start Tracing para comenzar.",
-    adbPanel: "ADB & Emuladores",
-    sessionPanel: "Sesion de tracing",
-    adbAvailable: "ADB disponible",
-    adbVersion: "Version ADB",
-    adbPath: "Ruta ADB",
-    emulatorsConnected: "Emuladores conectados",
-    state: "Estado",
-    activeEmulator: "Emulador activo",
-    proxyApplied: "Proxy aplicado",
-    localCa: "CA local",
-    startedAt: "Iniciado en",
-    active: "Activo",
-    stopped: "Detenido",
-    requestsTitle: "Requests capturadas",
-    workspaceTabRequests: "Requests",
-    workspaceTabInterception: "Intercepcion",
-    clearSession: "Clear Session",
-    filterText: "Buscar por host o path",
-    filterMethod: "Filtro metodo HTTP",
-    filterStatus: "Status: 200, 2xx, 400-499",
-    allMethods: "Todos los metodos",
-    clearFilters: "Limpiar filtros",
-    sortBy: "Ordenar por",
-    sortDirection: "Direccion",
-    sortById: "ID",
-    sortByTime: "Tiempo",
-    asc: "ASC",
-    desc: "DESC",
-    timestamp: "Timestamp",
-    method: "Method",
-    host: "Host",
-    path: "Path",
-    status: "Status",
-    duration: "Duracion",
-    noTraffic: "Sin trafico capturado aun.",
-    noFilterResults: "No hay resultados para los filtros actuales.",
-    detailTitle: "Detalle de request",
-    selectRequest: "Selecciona una request para ver request, response y metadata.",
-    detailsFor: "Detalle",
-    copied: "Copiado al portapapeles.",
-    copyFailed: "No fue posible copiar al portapapeles.",
-    copyUrl: "Copiar URL",
-    exportCurl: "Exportar como cURL",
-    requestTab: "Request",
-    responseTab: "Response",
-    headersTab: "Headers",
-    cookiesTab: "Cookies",
-    paramsTab: "Params",
-    timingTab: "Timing",
-    requestSize: "Request size",
-    responseSize: "Response size",
-    noBody: "No hay body textual disponible para esta captura.",
-    copyContent: "Copiar contenido",
-    requestHeaders: "Request headers",
-    responseHeaders: "Response headers",
-    noHeaders: "Sin headers",
-    noCookies: "No se detectaron cookies en request/response.",
-    noParams: "No se detectaron query params para esta request.",
-    queryLabel: "Query",
-    requestBodySize: "Request body size",
-    responseBodySize: "Response body size",
-    interceptStatus: "Estado interceptacion",
-    originalRequest: "Original",
-    interceptionTitle: "Intercepcion y reenvio",
-    interceptionEnabled: "Modo interceptacion",
-    interceptionTimeout: "Timeout (ms)",
-    interceptionHostFilter: "Dominio contiene",
-    interceptionPathFilter: "Path contiene",
-    interceptionMethodFilter: "Metodo",
-    interceptionAllMethods: "Todos",
-    interceptionRuleEnabled: "Activa",
-    interceptionRules: "Reglas",
-    interceptionRulesEmptyHint: "Sin reglas activas: se intercepta todo.",
-    manageRules: "Reglas",
-    close: "Cerrar",
-    addRule: "Agregar regla",
-    removeRule: "Quitar",
-    applyInterception: "Aplicar",
-    pendingInterceptions: "Pendientes",
-    noPendingInterceptions: "No hay requests pendientes de decision.",
-    interceptEditor: "Editor de request interceptada",
-    editorHeaders: "Headers (uno por linea: Nombre: Valor)",
-    editorBody: "Body",
-    editorQuery: "Query string",
-    editorCookies: "Cookies",
-    forwardRequest: "Reenviar",
-    dropRequest: "Descartar",
-    intercepted: "interceptada",
-    timeout: "timeout",
-    dropped: "descartada",
-  },
-  en: {
-    headerTitle: "Android Emulator Proxy Console",
-    headerSubhead:
-      "Local HTTP/HTTPS tracing for Android emulators, with capture, filters, details, and editable interception.",
-    settings: "Settings",
-    settingsTitle: "Preferences",
-    language: "Language",
-    theme: "Theme",
-    fontSize: "Font size",
-    sensitiveData: "Sensitive data",
-    certTrusted: "CA trusted on emulator",
-    closeSettings: "Close settings",
-    light: "Light",
-    dark: "Dark",
-    fontSmall: "Small",
-    fontMedium: "Medium",
-    fontLarge: "Large",
-    showSensitive: "Show real values",
-    hideSensitive: "Mask sensitive values",
-    markCertTrusted: "Trusted",
-    markCertPending: "Pending",
-    controls: "Tracing controls",
-    emulator: "Emulator",
-    proxyHost: "Proxy host (emulator)",
-    proxyPort: "Proxy port",
-    refresh: "Refresh",
-    prepareCa: "Prepare CA Install",
-    certInstallConsentTitle: "Certificate install permissions",
-    certInstallConsentBody:
-      "The app will copy the certificate to the emulator and attempt to open Security so you can complete manual install.",
-    certInstallFlowLabel: "Recommended flow",
-    certInstallFlowDesc:
-      "1) Copy certificate into Download. 2) Open Security. 3) In Android: Encryption & credentials > Install a certificate > CA certificate.",
-    certInstallContinue: "Continue",
-    certInstallPreparing: "Copying certificate and opening Security...",
-    exitPromptTitle: "Before exit",
-    exitPromptBody:
-      "The app will close and clear emulator proxy settings so the device keeps normal connectivity.",
-    exitPromptProxyHint:
-      "If the app is force-closed and proxy remains, run: adb shell settings put global http_proxy :0",
-    exitPromptCertHint:
-      "CA certificate removal is manual in Android: Security > Encryption & credentials.",
-    exitPromptCancel: "Cancel",
-    exitPromptConfirm: "Exit and clean",
-    exitPromptClosing: "Closing app and cleaning proxy...",
-    startTracing: "Start Tracing",
-    stopTracing: "Stop Tracing",
-    operationStatus: "Operational states",
-    adbMissing: "ADB missing",
-    noEmulator: "No emulator",
-    certNotTrusted: "Cert not trusted",
-    tracingActive: "Tracing active",
-    ready: "Ready",
-    adbMissingDesc: "adb binary was not found on this machine.",
-    noEmulatorDesc: "ADB is reachable but no online emulator was found.",
-    certNotTrustedDesc: "Local CA is not marked as trusted for HTTPS yet.",
-    tracingActiveDesc: "MITM proxy is active and capturing traffic.",
-    readyDesc: "ADB and emulator are ready to start tracing.",
-    adbMissingAction: "Install platform-tools or set ADB_PATH.",
-    noEmulatorAction: "Start an AVD and verify `adb devices`.",
-    certNotTrustedAction: "Install CA in emulator and mark as trusted.",
-    tracingActiveAction: "You can inspect, filter, or intercept requests.",
-    readyAction: "Press Start Tracing to begin.",
-    adbPanel: "ADB & Emulators",
-    sessionPanel: "Tracing session",
-    adbAvailable: "ADB available",
-    adbVersion: "ADB version",
-    adbPath: "ADB path",
-    emulatorsConnected: "Connected emulators",
-    state: "State",
-    activeEmulator: "Active emulator",
-    proxyApplied: "Applied proxy",
-    localCa: "Local CA",
-    startedAt: "Started at",
-    active: "Active",
-    stopped: "Stopped",
-    requestsTitle: "Captured requests",
-    workspaceTabRequests: "Requests",
-    workspaceTabInterception: "Interception",
-    clearSession: "Clear Session",
-    filterText: "Search by host or path",
-    filterMethod: "HTTP method filter",
-    filterStatus: "Status: 200, 2xx, 400-499",
-    allMethods: "All methods",
-    clearFilters: "Clear filters",
-    sortBy: "Sort by",
-    sortDirection: "Direction",
-    sortById: "ID",
-    sortByTime: "Time",
-    asc: "ASC",
-    desc: "DESC",
-    timestamp: "Timestamp",
-    method: "Method",
-    host: "Host",
-    path: "Path",
-    status: "Status",
-    duration: "Duration",
-    noTraffic: "No traffic captured yet.",
-    noFilterResults: "No results for the current filters.",
-    detailTitle: "Request details",
-    selectRequest: "Select a request to view request, response, and metadata.",
-    detailsFor: "Details",
-    copied: "Copied to clipboard.",
-    copyFailed: "Unable to copy to clipboard.",
-    copyUrl: "Copy URL",
-    exportCurl: "Export as cURL",
-    requestTab: "Request",
-    responseTab: "Response",
-    headersTab: "Headers",
-    cookiesTab: "Cookies",
-    paramsTab: "Params",
-    timingTab: "Timing",
-    requestSize: "Request size",
-    responseSize: "Response size",
-    noBody: "No textual body available for this capture.",
-    copyContent: "Copy content",
-    requestHeaders: "Request headers",
-    responseHeaders: "Response headers",
-    noHeaders: "No headers",
-    noCookies: "No cookies detected in request/response.",
-    noParams: "No query params detected for this request.",
-    queryLabel: "Query",
-    requestBodySize: "Request body size",
-    responseBodySize: "Response body size",
-    interceptStatus: "Interception status",
-    originalRequest: "Original",
-    interceptionTitle: "Interception & replay",
-    interceptionEnabled: "Interception mode",
-    interceptionTimeout: "Timeout (ms)",
-    interceptionHostFilter: "Host contains",
-    interceptionPathFilter: "Path contains",
-    interceptionMethodFilter: "Method",
-    interceptionAllMethods: "All",
-    interceptionRuleEnabled: "Enabled",
-    interceptionRules: "Rules",
-    interceptionRulesEmptyHint: "No active rules: intercept everything.",
-    manageRules: "Rules",
-    close: "Close",
-    addRule: "Add rule",
-    removeRule: "Remove",
-    applyInterception: "Apply",
-    pendingInterceptions: "Pending",
-    noPendingInterceptions: "No requests pending decision.",
-    interceptEditor: "Intercepted request editor",
-    editorHeaders: "Headers (one per line: Name: Value)",
-    editorBody: "Body",
-    editorQuery: "Query string",
-    editorCookies: "Cookies",
-    forwardRequest: "Forward",
-    dropRequest: "Drop",
-    intercepted: "intercepted",
-    timeout: "timeout",
-    dropped: "dropped",
-  },
-};
-
-function formatStartTime(unixMs: number | null): string {
-  if (!unixMs) return "-";
-  return new Date(unixMs).toLocaleString();
-}
-
-function formatRequestTimestamp(unixMs: number): string {
-  return new Date(unixMs).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false,
-  });
-}
-
-function toUserError(error: unknown): string {
-  const raw = String(error ?? "").replace(/^Error:\s*/i, "").trim();
-  if (!raw) return "Ocurrió un error inesperado.";
-
-  if (raw.includes("adb not found")) {
-    return "No se encontró adb. Instala Android platform-tools o define ADB_PATH con la ruta del binario.";
-  }
-  if (raw.includes("offline")) {
-    return `${raw} Sugerencia: ejecuta \`adb reconnect offline\` y espera a que el emulador aparezca como \`device\`.`;
-  }
-  if (raw.includes("Failed to bind local proxy") || raw.includes("address already in use")) {
-    return `${raw} Sugerencia: cambia el puerto de proxy en la UI y vuelve a intentar.`;
-  }
-  if (raw.includes("cannot connect to daemon")) {
-    return `${raw} Sugerencia: ejecuta \`adb start-server\` y luego Refresh.`;
-  }
-  if (raw.includes("adb root failed")) {
-    return `${raw} Sugerencia: usa un AVD debug/userdebug (no Play image) o completa la instalacion manual desde Settings.`;
-  }
-  if (raw.includes("adb remount failed")) {
-    return `${raw} Sugerencia: el emulador no permite montar /system en escritura; usa instalacion manual o un AVD con root.`;
-  }
-
-  return raw;
-}
-
-export { DEFAULT_PROXY_HOST, DEFAULT_PROXY_PORT, formatStartTime, formatRequestTimestamp, toUserError };
-
-function loadPreferences(): UserPreferences {
-  try {
-    const raw = localStorage.getItem(PREFERENCES_STORAGE_KEY);
-    if (!raw) return DEFAULT_PREFERENCES;
-    const parsed = JSON.parse(raw) as Partial<UserPreferences>;
-    return {
-      language: parsed.language === "en" ? "en" : "es",
-      theme: parsed.theme === "dark" ? "dark" : "light",
-      fontScale:
-        parsed.fontScale === "small" || parsed.fontScale === "large" ? parsed.fontScale : "medium",
-      showSensitiveData: Boolean(parsed.showSensitiveData),
-      certTrusted: Boolean(parsed.certTrusted),
-    };
-  } catch {
-    return DEFAULT_PREFERENCES;
-  }
-}
-
-function persistPreferences(next: UserPreferences) {
-  try {
-    localStorage.setItem(PREFERENCES_STORAGE_KEY, JSON.stringify(next));
-  } catch {
-    // noop: preference persistence is best-effort only.
-  }
-}
-
-function formatByteSize(sizeInBytes: number): string {
-  if (sizeInBytes < 1024) return `${sizeInBytes} B`;
-  if (sizeInBytes < 1024 * 1024) return `${(sizeInBytes / 1024).toFixed(1)} KB`;
-  return `${(sizeInBytes / (1024 * 1024)).toFixed(1)} MB`;
-}
-
-function isSensitiveHeader(name: string): boolean {
-  return SENSITIVE_HEADERS.has(name.toLowerCase());
-}
-
-function maskSensitiveValue(value: string): string {
-  if (!value) return "[redacted]";
-  if (value.length <= 8) return "[redacted]";
-  return `${value.slice(0, 3)}***${value.slice(-2)}`;
-}
-
-function getHeaderValue(headers: HeaderEntry[], headerName: string): string | null {
-  const match = headers.find((header) => header.name.toLowerCase() === headerName.toLowerCase());
-  return match?.value ?? null;
-}
-
-function parseCookieEntries(selectedRequest: CapturedExchange): Array<{ source: "Request" | "Response"; name: string; value: string }> {
-  const entries: Array<{ source: "Request" | "Response"; name: string; value: string }> = [];
-  const requestCookieRaw = getHeaderValue(selectedRequest.requestHeaders, "cookie");
-
-  if (requestCookieRaw) {
-    requestCookieRaw
-      .split(";")
-      .map((entry) => entry.trim())
-      .filter(Boolean)
-      .forEach((entry) => {
-        const separatorIndex = entry.indexOf("=");
-        const name = separatorIndex >= 0 ? entry.slice(0, separatorIndex).trim() : entry;
-        const value = separatorIndex >= 0 ? entry.slice(separatorIndex + 1).trim() : "";
-        entries.push({ source: "Request", name, value });
-      });
-  }
-
-  selectedRequest.responseHeaders
-    .filter((header) => header.name.toLowerCase() === "set-cookie")
-    .forEach((header) => {
-      const cookieToken = header.value.split(";")[0]?.trim();
-      if (!cookieToken) return;
-      const separatorIndex = cookieToken.indexOf("=");
-      const name = separatorIndex >= 0 ? cookieToken.slice(0, separatorIndex).trim() : cookieToken;
-      const value = separatorIndex >= 0 ? cookieToken.slice(separatorIndex + 1).trim() : "";
-      entries.push({ source: "Response", name, value });
-    });
-
-  return entries;
-}
-
-function parseParamEntries(selectedRequest: CapturedExchange): Array<{ name: string; value: string }> {
-  const paramEntries: Array<{ name: string; value: string }> = [];
-  const pushParams = (search: string) => {
-    const params = new URLSearchParams(search);
-    params.forEach((value, name) => {
-      paramEntries.push({ name, value });
-    });
-  };
-
-  try {
-    const url = new URL(selectedRequest.url);
-    pushParams(url.search);
-  } catch {
-    const queryString = selectedRequest.path.includes("?") ? selectedRequest.path.slice(selectedRequest.path.indexOf("?")) : "";
-    if (queryString) {
-      pushParams(queryString);
-    }
-  }
-
-  return paramEntries;
-}
-
-function matchesStatusFilter(statusCode: number, rawFilter: string): boolean {
-  const filter = rawFilter.trim().toLowerCase();
-  if (!filter) return true;
-
-  if (/^\d{1,2}$/.test(filter)) {
-    return statusCode.toString().startsWith(filter);
-  }
-
-  if (/^\d{3}$/.test(filter)) {
-    return statusCode === Number(filter);
-  }
-
-  const rangeMatch = filter.match(/^(\d{1,3})\s*-\s*(\d{1,3})$/);
-  if (rangeMatch) {
-    const start = Number(rangeMatch[1]);
-    const end = Number(rangeMatch[2]);
-    const min = Math.min(start, end);
-    const max = Math.max(start, end);
-    return statusCode >= min && statusCode <= max;
-  }
-
-  const classMatch = filter.match(/^([1-5])xx$/);
-  if (classMatch) {
-    const prefix = Number(classMatch[1]) * 100;
-    return statusCode >= prefix && statusCode <= prefix + 99;
-  }
-
-  return true;
-}
-
-function escapeForSingleQuotedShell(value: string): string {
-  return `'${value.replace(/'/g, `'"'"'`)}'`;
-}
-
-function formatHeadersAsText(headers: HeaderEntry[], showSensitiveData: boolean): string {
-  return headers
-    .map((header) => {
-      const value = !showSensitiveData && isSensitiveHeader(header.name)
-        ? maskSensitiveValue(header.value)
-        : header.value;
-      return `${header.name}: ${value}`;
-    })
-    .join("\n");
-}
-
-function parseHeaderLines(raw: string): HeaderEntry[] {
-  return raw
-    .split("\n")
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => {
-      const separator = line.indexOf(":");
-      if (separator <= 0) {
-        return { name: line, value: "" };
-      }
-      return {
-        name: line.slice(0, separator).trim(),
-        value: line.slice(separator + 1).trim(),
-      };
-    })
-    .filter((entry) => entry.name.length > 0);
-}
-
-function createRuleId(): string {
-  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
-    return crypto.randomUUID();
-  }
-  return `rule-${Date.now()}-${Math.floor(Math.random() * 10_000)}`;
-}
-
-function createEmptyRule(): InterceptionRule {
-  return {
-    id: createRuleId(),
-    enabled: true,
-    hostContains: "",
-    pathContains: "",
-    method: "",
-  };
-}
-
-function buildCurlCommand(request: CapturedExchange, showSensitiveData: boolean): string {
-  const parts: string[] = ["curl", "-X", request.method.toUpperCase(), escapeForSingleQuotedShell(request.url)];
-
-  request.requestHeaders.forEach((header) => {
-    if (!showSensitiveData && isSensitiveHeader(header.name)) {
-      return;
-    }
-    parts.push("-H", escapeForSingleQuotedShell(`${header.name}: ${header.value}`));
-  });
-
-  if (request.requestBody && request.requestBody.trim().length > 0) {
-    parts.push("--data-raw", escapeForSingleQuotedShell(request.requestBody));
-  }
-
-  return parts.join(" ");
-}
-
-async function copyToClipboard(content: string): Promise<void> {
-  if (!content) {
-    throw new Error("Empty content");
-  }
-
-  if (navigator?.clipboard?.writeText) {
-    await navigator.clipboard.writeText(content);
-    return;
-  }
-
-  const textarea = document.createElement("textarea");
-  textarea.value = content;
-  textarea.setAttribute("readonly", "");
-  textarea.style.position = "absolute";
-  textarea.style.left = "-9999px";
-  document.body.appendChild(textarea);
-  textarea.select();
-  const ok = document.execCommand("copy");
-  document.body.removeChild(textarea);
-  if (!ok) {
-    throw new Error("copy command failed");
-  }
-}
+export { DEFAULT_PROXY_HOST, DEFAULT_PROXY_PORT } from "./shared/config";
+export { formatRequestTimestamp, formatStartTime, toUserError } from "./shared/utils/requestHelpers";
 
 function App() {
   const [preferences, setPreferences] = useState<UserPreferences>(() => loadPreferences());
@@ -1056,7 +237,7 @@ function App() {
 
   async function loadInterceptionState(syncInputs = true) {
     try {
-      const snapshot = await invoke<InterceptionSnapshot>("get_interception_state");
+      const snapshot = await getInterceptionState();
       setInterception(snapshot);
       if (syncInputs) {
         setInterceptTimeoutInput(String(snapshot.timeoutMs));
@@ -1081,8 +262,8 @@ function App() {
 
   async function loadSessionAndAdb() {
     const [nextAdbStatus, nextSession] = await Promise.all([
-      invoke<AdbStatus>("get_adb_status"),
-      invoke<TraceSessionSnapshot>("get_session_state"),
+      getAdbStatus(),
+      getSessionState(),
     ]);
 
     setAdbStatus(nextAdbStatus);
@@ -1099,7 +280,7 @@ function App() {
   }
 
   async function loadCapturedRequests() {
-    const requests = await invoke<CapturedExchange[]>("get_captured_requests");
+    const requests = await getCapturedRequests();
     setCapturedRequests((previous) => {
       const previousLastId = previous[previous.length - 1]?.id;
       const nextLastId = requests[requests.length - 1]?.id;
@@ -1140,7 +321,7 @@ function App() {
     setInfoText("Iniciando tracing...");
 
     try {
-      const nextSession = await invoke<TraceSessionSnapshot>("start_tracing", {
+      const nextSession = await startTracing({
         emulatorSerial: selectedEmulator,
         proxyHost,
         proxyPort: Number(proxyPort),
@@ -1163,7 +344,7 @@ function App() {
     setInfoText("Deteniendo tracing...");
 
     try {
-      const nextSession = await invoke<TraceSessionSnapshot>("stop_tracing");
+      const nextSession = await stopTracing();
       setSession(nextSession);
       setInfoText("Tracing detenido. Proxy removido del emulador.");
       await loadInterceptionState();
@@ -1198,9 +379,7 @@ function App() {
     setCertInfoText(null);
 
     try {
-      const result = await invoke<CertificateSetupResult>("prepare_certificate_install", {
-        emulatorSerial: selectedEmulator,
-      });
+      const result = await prepareCertificateInstall(selectedEmulator);
       setCertInfoText(
         `${result.instructions} Verificacion: ${result.verificationNote} Archivo local: ${result.certLocalPath}. Archivo en emulador: ${result.certEmulatorPath}.`,
       );
@@ -1233,7 +412,7 @@ function App() {
     setInfoText(texts.exitPromptClosing);
 
     try {
-      await invoke("confirm_app_exit");
+      await confirmAppExit();
     } catch (error) {
       setExitBusy(false);
       setExitModalOpen(false);
@@ -1246,7 +425,7 @@ function App() {
     setBusy(true);
     setErrorText(null);
     try {
-      await invoke("clear_captured_requests");
+      await clearCapturedRequests();
       setCapturedRequests([]);
       setSelectedRequestId(null);
       setInfoText("Sesion de requests limpiada.");
@@ -1294,7 +473,7 @@ function App() {
     };
 
     try {
-      const snapshot = await invoke<InterceptionSnapshot>("configure_interception", { config: payload });
+      const snapshot = await configureInterception(payload);
       setInterception(snapshot);
       setInterceptTimeoutInput(String(snapshot.timeoutMs));
       setInterceptRulesInput(
@@ -1332,7 +511,7 @@ function App() {
     }
 
     try {
-      const snapshot = await invoke<InterceptionSnapshot>("decide_intercept_request", { decision });
+      const snapshot = await decideInterceptRequest(decision);
       setInterception(snapshot);
       setInfoText(action === "drop" ? "Request interceptada descartada." : "Request interceptada reenviada.");
     } catch (error) {
@@ -1399,22 +578,26 @@ function App() {
   useEffect(() => {
     let unlistenWindowClose: UnlistenFn | null = null;
 
-    getCurrentWindow()
-      .onCloseRequested((event) => {
-        if (exitBusyRef.current) {
-          return;
-        }
+    try {
+      getCurrentWindow()
+        .onCloseRequested((event) => {
+          if (exitBusyRef.current) {
+            return;
+          }
 
-        event.preventDefault();
-        setExitBusy(false);
-        setExitModalOpen(true);
-      })
-      .then((dispose) => {
-        unlistenWindowClose = dispose;
-      })
-      .catch(() => {
-        // Close interception is best-effort.
-      });
+          event.preventDefault();
+          setExitBusy(false);
+          setExitModalOpen(true);
+        })
+        .then((dispose) => {
+          unlistenWindowClose = dispose;
+        })
+        .catch(() => {
+          // Close interception is best-effort.
+        });
+    } catch {
+      // getCurrentWindow can throw in non-Tauri environments (e.g. unit tests).
+    }
 
     return () => {
       if (unlistenWindowClose) {
