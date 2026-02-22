@@ -109,6 +109,7 @@ async fn decide_intercept_request(
 #[tauri::command]
 fn prepare_certificate_install(
     emulator_serial: String,
+    allow_adb_root: bool,
     state: State<'_, AppState>,
 ) -> Result<CertificateSetupResult, String> {
     if emulator_serial.trim().is_empty() {
@@ -117,7 +118,8 @@ fn prepare_certificate_install(
 
     tracer::adb_controller::ensure_adb_available()?;
     let ca_bundle = tracer::cert::ensure_ca_bundle()?;
-    let setup_result = tracer::cert::prepare_certificate_install(&emulator_serial, &ca_bundle)?;
+    let setup_result =
+        tracer::cert::prepare_certificate_install(&emulator_serial, &ca_bundle, allow_adb_root)?;
 
     let mut session = state
         .session

@@ -154,6 +154,16 @@ type LocaleTexts = {
   proxyPort: string;
   refresh: string;
   prepareCa: string;
+  certInstallConsentTitle: string;
+  certInstallConsentBody: string;
+  certInstallStandardLabel: string;
+  certInstallStandardDesc: string;
+  certInstallRootLabel: string;
+  certInstallRootDesc: string;
+  certInstallContinueStandard: string;
+  certInstallContinueRoot: string;
+  certInstallPreparingStandard: string;
+  certInstallPreparingRoot: string;
   startTracing: string;
   stopTracing: string;
   operationStatus: string;
@@ -315,6 +325,19 @@ const LOCALES: Record<Language, LocaleTexts> = {
     proxyPort: "Proxy port",
     refresh: "Refresh",
     prepareCa: "Prepare CA Install",
+    certInstallConsentTitle: "Permisos para instalacion de certificado",
+    certInstallConsentBody:
+      "Puedes continuar con instalacion manual asistida o permitir intento avanzado con `adb root`.",
+    certInstallStandardLabel: "Sin adb root (recomendado)",
+    certInstallStandardDesc:
+      "Copia el certificado al emulador y abre el instalador de Android para que confirmes manualmente.",
+    certInstallRootLabel: "Permitir adb root (avanzado)",
+    certInstallRootDesc:
+      "Intenta instalar la CA en el store de sistema con `adb root` + `adb remount`. Puede fallar en imagenes no debug.",
+    certInstallContinueStandard: "Continuar sin adb root",
+    certInstallContinueRoot: "Permitir adb root",
+    certInstallPreparingStandard: "Preparando certificado sin adb root...",
+    certInstallPreparingRoot: "Preparando certificado con intento adb root...",
     startTracing: "Start Tracing",
     stopTracing: "Stop Tracing",
     operationStatus: "Estados operativos",
@@ -451,6 +474,19 @@ const LOCALES: Record<Language, LocaleTexts> = {
     proxyPort: "Proxy port",
     refresh: "Refresh",
     prepareCa: "Prepare CA Install",
+    certInstallConsentTitle: "Certificate install permissions",
+    certInstallConsentBody:
+      "You can continue with assisted manual installation or allow an advanced `adb root` attempt.",
+    certInstallStandardLabel: "Without adb root (recommended)",
+    certInstallStandardDesc:
+      "Copies the certificate to the emulator and opens Android installer so you confirm manually.",
+    certInstallRootLabel: "Allow adb root (advanced)",
+    certInstallRootDesc:
+      "Attempts CA install into system trust store using `adb root` + `adb remount`. It may fail on non-debug images.",
+    certInstallContinueStandard: "Continue without adb root",
+    certInstallContinueRoot: "Allow adb root",
+    certInstallPreparingStandard: "Preparing certificate without adb root...",
+    certInstallPreparingRoot: "Preparing certificate with adb root attempt...",
     startTracing: "Start Tracing",
     stopTracing: "Stop Tracing",
     operationStatus: "Operational states",
@@ -857,6 +893,7 @@ function App() {
   const [certInfoText, setCertInfoText] = useState<string | null>(null);
   const [copyFeedback, setCopyFeedback] = useState<string | null>(null);
   const [rulesModalOpen, setRulesModalOpen] = useState(false);
+  const [certInstallModalOpen, setCertInstallModalOpen] = useState(false);
 
   const [interceptTimeoutInput, setInterceptTimeoutInput] = useState("12000");
   const [interceptRulesInput, setInterceptRulesInput] = useState<InterceptionRule[]>([]);
@@ -1126,13 +1163,26 @@ function App() {
       return;
     }
 
+    setErrorText(null);
+    setCertInstallModalOpen(true);
+  }
+
+  async function runPrepareCertificateInstall(allowAdbRoot: boolean) {
+    if (!selectedEmulator) {
+      setErrorText("Selecciona un emulador para preparar el certificado.");
+      return;
+    }
+
+    setCertInstallModalOpen(false);
     setBusy(true);
     setErrorText(null);
-    setInfoText("Preparando certificado...");
+    setInfoText(allowAdbRoot ? texts.certInstallPreparingRoot : texts.certInstallPreparingStandard);
     setCertInfoText(null);
+
     try {
       const result = await invoke<CertificateSetupResult>("prepare_certificate_install", {
         emulatorSerial: selectedEmulator,
+        allowAdbRoot,
       });
       setCertInfoText(
         `${result.instructions} Verificacion: ${result.verificationNote} Archivo local: ${result.certLocalPath}. Archivo en emulador: ${result.certEmulatorPath}.`,
@@ -1965,6 +2015,52 @@ function App() {
         )}
       </section>
       </>
+      )}
+
+      {certInstallModalOpen && (
+        <div
+          className="modal-backdrop"
+          onClick={() => {
+            if (!busy) {
+              setCertInstallModalOpen(false);
+            }
+          }}
+        >
+          <section
+            className="modal-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label={texts.certInstallConsentTitle}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <h3>{texts.certInstallConsentTitle}</h3>
+              <button type="button" onClick={() => setCertInstallModalOpen(false)} disabled={busy}>
+                {texts.close}
+              </button>
+            </div>
+            <p>{texts.certInstallConsentBody}</p>
+            <section className="detail-block">
+              <h3>{texts.certInstallStandardLabel}</h3>
+              <p>{texts.certInstallStandardDesc}</p>
+              <h3>{texts.certInstallRootLabel}</h3>
+              <p>{texts.certInstallRootDesc}</p>
+            </section>
+            <div className="actions modal-actions">
+              <button type="button" disabled={busy} onClick={() => void runPrepareCertificateInstall(false)}>
+                {texts.certInstallContinueStandard}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={busy}
+                onClick={() => void runPrepareCertificateInstall(true)}
+              >
+                {texts.certInstallContinueRoot}
+              </button>
+            </div>
+          </section>
+        </div>
       )}
 
       {rulesModalOpen && (

@@ -55,48 +55,72 @@ pub fn ensure_ca_bundle() -> Result<CaBundlePaths, String> {
 pub fn prepare_certificate_install(
     emulator_serial: &str,
     paths: &CaBundlePaths,
+    allow_adb_root: bool,
 ) -> Result<CertificateSetupResult, String> {
     let remote_path = "/sdcard/Download/http-request-tracer-ca.cer";
     let local_cert = paths.cert_der.to_string_lossy().to_string();
 
     adb::push_file_to_emulator(emulator_serial, paths.cert_der.as_path(), remote_path)?;
 
-    match try_install_certificate_with_adb_root(emulator_serial, paths) {
-        Ok(system_path) => Ok(CertificateSetupResult {
-            cert_local_path: local_cert,
-            cert_emulator_path: system_path.clone(),
-            installer_launched: false,
-            installation_status: "installed".to_string(),
-            verification_note: format!("Certificado verificado en {system_path}."),
-            instructions: "Certificado instalado automaticamente en el store de sistema del emulador via ADB. Reinicia las apps del emulador si no toman el nuevo trust store de inmediato.".to_string(),
-        }),
-        Err(automation_err) => {
-            let launch_result = adb::launch_certificate_installer(emulator_serial, remote_path);
-            if launch_result.is_ok() {
+    let automation_error = if allow_adb_root {
+        match try_install_certificate_with_adb_root(emulator_serial, paths) {
+            Ok(system_path) => {
                 return Ok(CertificateSetupResult {
                     cert_local_path: local_cert,
-                    cert_emulator_path: remote_path.to_string(),
-                    installer_launched: true,
-                    installation_status: "pendingUserAction".to_string(),
-                    verification_note: format!(
-                        "Instalacion automatica no disponible: {automation_err}"
-                    ),
-                    instructions: "Certificado copiado al emulador y pantalla de instalacion abierta. Completa la instalacion en Android (nombre sugerido: HTTP Request Tracer CA).".to_string(),
+                    cert_emulator_path: system_path.clone(),
+                    installer_launched: false,
+                    installation_status: "installed".to_string(),
+                    verification_note: format!("Certificado verificado en {system_path}."),
+                    instructions: "Certificado instalado automaticamente en el store de sistema del emulador via ADB. Reinicia las apps del emulador si no toman el nuevo trust store de inmediato.".to_string(),
                 });
             }
-
-            Ok(CertificateSetupResult {
-                cert_local_path: local_cert,
-                cert_emulator_path: remote_path.to_string(),
-                installer_launched: false,
-                installation_status: "failed".to_string(),
-                verification_note: format!(
-                    "Fallo instalacion automatica: {automation_err}. No fue posible abrir instalador de Android."
-                ),
-                instructions: "No se pudo completar la instalacion de certificado via ADB. Verifica que el emulador permita `adb root`/`adb remount` o instala manualmente desde Settings > Security > Encryption & credentials > Install a certificate > CA certificate.".to_string(),
-            })
+            Err(err) => Some(err),
         }
+    } else {
+        None
+    };
+
+    let launch_result = adb::launch_certificate_installer(emulator_serial, remote_path);
+    if launch_result.is_ok() {
+        let verification_note = match automation_error {
+            Some(automation_err) => {
+                format!("Instalacion automatica no disponible: {automation_err}")
+            }
+            None => "Instalacion automatica via `adb root` omitida por preferencia del usuario."
+                .to_string(),
+        };
+        return Ok(CertificateSetupResult {
+            cert_local_path: local_cert,
+            cert_emulator_path: remote_path.to_string(),
+            installer_launched: true,
+            installation_status: "pendingUserAction".to_string(),
+            verification_note,
+            instructions: "Certificado copiado al emulador y pantalla de instalacion abierta. Completa la instalacion en Android (nombre sugerido: HTTP Request Tracer CA).".to_string(),
+        });
     }
+
+    let verification_note = match automation_error {
+        Some(automation_err) => format!(
+            "Fallo instalacion automatica: {automation_err}. No fue posible abrir instalador de Android."
+        ),
+        None => "No se solicito `adb root` y no fue posible abrir el instalador de certificados en Android."
+            .to_string(),
+    };
+
+    let instructions = if allow_adb_root {
+        "No se pudo completar la instalacion de certificado via ADB. Verifica que el emulador permita `adb root`/`adb remount` o instala manualmente desde Settings > Security > Encryption & credentials > Install a certificate > CA certificate.".to_string()
+    } else {
+        "No se pudo abrir el instalador de certificados en Android. Instala manualmente desde Settings > Security > Encryption & credentials > Install a certificate > CA certificate.".to_string()
+    };
+
+    Ok(CertificateSetupResult {
+        cert_local_path: local_cert,
+        cert_emulator_path: remote_path.to_string(),
+        installer_launched: false,
+        installation_status: "failed".to_string(),
+        verification_note,
+        instructions,
+    })
 }
 
 fn try_install_certificate_with_adb_root(
@@ -116,8 +140,12 @@ fn try_install_certificate_with_adb_root(
             .map_err(|err| format!("adb root failed (emulator might not support root): {err}"))?;
         adb::adb_remount(emulator_serial)
             .map_err(|err| format!("adb remount failed (system partition not writable): {err}"))?;
-        adb::push_file_to_emulator(emulator_serial, hashed_local_path.as_path(), &hashed_remote_path)
-            .map_err(|err| format!("Failed to push CA into system trust store: {err}"))?;
+        adb::push_file_to_emulator(
+            emulator_serial,
+            hashed_local_path.as_path(),
+            &hashed_remote_path,
+        )
+        .map_err(|err| format!("Failed to push CA into system trust store: {err}"))?;
         adb::chown_remote_file(emulator_serial, &hashed_remote_path, "root:root")
             .map_err(|err| format!("Failed to set CA owner: {err}"))?;
         adb::chmod_remote_file(emulator_serial, &hashed_remote_path, "644")
