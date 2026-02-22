@@ -154,19 +154,12 @@ type LocaleTexts = {
   proxyPort: string;
   refresh: string;
   prepareCa: string;
-  openSecurity: string;
-  openingSecurity: string;
-  securityOpened: string;
   certInstallConsentTitle: string;
   certInstallConsentBody: string;
-  certInstallStandardLabel: string;
-  certInstallStandardDesc: string;
-  certInstallRootLabel: string;
-  certInstallRootDesc: string;
-  certInstallContinueStandard: string;
-  certInstallContinueRoot: string;
-  certInstallPreparingStandard: string;
-  certInstallPreparingRoot: string;
+  certInstallFlowLabel: string;
+  certInstallFlowDesc: string;
+  certInstallContinue: string;
+  certInstallPreparing: string;
   startTracing: string;
   stopTracing: string;
   operationStatus: string;
@@ -328,23 +321,14 @@ const LOCALES: Record<Language, LocaleTexts> = {
     proxyPort: "Proxy port",
     refresh: "Refresh",
     prepareCa: "Prepare CA Install",
-    openSecurity: "Abrir Security",
-    openingSecurity: "Abriendo Security en el emulador...",
-    securityOpened:
-      "Security abierta en el emulador. Sigue: Encryption & credentials > Install a certificate > CA certificate.",
     certInstallConsentTitle: "Permisos para instalacion de certificado",
     certInstallConsentBody:
-      "Puedes continuar con instalacion manual asistida o permitir intento avanzado con `adb root`.",
-    certInstallStandardLabel: "Sin adb root (recomendado)",
-    certInstallStandardDesc:
-      "Copia el certificado al emulador y abre el instalador de Android para que confirmes manualmente.",
-    certInstallRootLabel: "Permitir adb root (avanzado)",
-    certInstallRootDesc:
-      "Intenta instalar la CA en el store de sistema con `adb root` + `adb remount`. Puede fallar en imagenes no debug.",
-    certInstallContinueStandard: "Continuar sin adb root",
-    certInstallContinueRoot: "Permitir adb root",
-    certInstallPreparingStandard: "Preparando certificado sin adb root...",
-    certInstallPreparingRoot: "Preparando certificado con intento adb root...",
+      "La app copiara el certificado al emulador e intentara abrir Security para que completes la instalacion manual.",
+    certInstallFlowLabel: "Flujo recomendado",
+    certInstallFlowDesc:
+      "1) Copiar certificado en Download. 2) Abrir Security. 3) En Android: Encryption & credentials > Install a certificate > CA certificate.",
+    certInstallContinue: "Continue",
+    certInstallPreparing: "Copiando certificado y abriendo Security...",
     startTracing: "Start Tracing",
     stopTracing: "Stop Tracing",
     operationStatus: "Estados operativos",
@@ -481,23 +465,14 @@ const LOCALES: Record<Language, LocaleTexts> = {
     proxyPort: "Proxy port",
     refresh: "Refresh",
     prepareCa: "Prepare CA Install",
-    openSecurity: "Open Security",
-    openingSecurity: "Opening Security on emulator...",
-    securityOpened:
-      "Security opened on emulator. Then go to: Encryption & credentials > Install a certificate > CA certificate.",
     certInstallConsentTitle: "Certificate install permissions",
     certInstallConsentBody:
-      "You can continue with assisted manual installation or allow an advanced `adb root` attempt.",
-    certInstallStandardLabel: "Without adb root (recommended)",
-    certInstallStandardDesc:
-      "Copies the certificate to the emulator and opens Android installer so you confirm manually.",
-    certInstallRootLabel: "Allow adb root (advanced)",
-    certInstallRootDesc:
-      "Attempts CA install into system trust store using `adb root` + `adb remount`. It may fail on non-debug images.",
-    certInstallContinueStandard: "Continue without adb root",
-    certInstallContinueRoot: "Allow adb root",
-    certInstallPreparingStandard: "Preparing certificate without adb root...",
-    certInstallPreparingRoot: "Preparing certificate with adb root attempt...",
+      "The app will copy the certificate to the emulator and attempt to open Security so you can complete manual install.",
+    certInstallFlowLabel: "Recommended flow",
+    certInstallFlowDesc:
+      "1) Copy certificate into Download. 2) Open Security. 3) In Android: Encryption & credentials > Install a certificate > CA certificate.",
+    certInstallContinue: "Continue",
+    certInstallPreparing: "Copying certificate and opening Security...",
     startTracing: "Start Tracing",
     stopTracing: "Stop Tracing",
     operationStatus: "Operational states",
@@ -1178,33 +1153,7 @@ function App() {
     setCertInstallModalOpen(true);
   }
 
-  async function handleOpenSecuritySettings(closeModal = false) {
-    if (!selectedEmulator) {
-      setErrorText("Selecciona un emulador para abrir Security.");
-      return;
-    }
-
-    if (closeModal) {
-      setCertInstallModalOpen(false);
-    }
-
-    setBusy(true);
-    setErrorText(null);
-    setInfoText(texts.openingSecurity);
-    try {
-      await invoke("open_security_settings", {
-        emulatorSerial: selectedEmulator,
-      });
-      setInfoText(texts.securityOpened);
-    } catch (error) {
-      setErrorText(toUserError(error));
-      setInfoText(null);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function runPrepareCertificateInstall(allowAdbRoot: boolean) {
+  async function runPrepareCertificateInstall() {
     if (!selectedEmulator) {
       setErrorText("Selecciona un emulador para preparar el certificado.");
       return;
@@ -1213,25 +1162,21 @@ function App() {
     setCertInstallModalOpen(false);
     setBusy(true);
     setErrorText(null);
-    setInfoText(allowAdbRoot ? texts.certInstallPreparingRoot : texts.certInstallPreparingStandard);
+    setInfoText(texts.certInstallPreparing);
     setCertInfoText(null);
 
     try {
       const result = await invoke<CertificateSetupResult>("prepare_certificate_install", {
         emulatorSerial: selectedEmulator,
-        allowAdbRoot,
       });
       setCertInfoText(
         `${result.instructions} Verificacion: ${result.verificationNote} Archivo local: ${result.certLocalPath}. Archivo en emulador: ${result.certEmulatorPath}.`,
       );
-      if (result.installationStatus === "installed") {
-        setInfoText("Certificado instalado automaticamente via ADB.");
-        updatePreferences({ certTrusted: true });
-      } else if (result.installationStatus === "pendingUserAction") {
+      if (result.installationStatus === "pendingUserAction") {
         setInfoText("Certificado copiado. Completa la confirmacion en el emulador.");
         updatePreferences({ certTrusted: false });
       } else {
-        setInfoText("No fue posible completar la instalacion automatica del certificado.");
+        setInfoText("No fue posible preparar la instalacion manual del certificado.");
         updatePreferences({ certTrusted: false });
       }
       await loadSessionAndAdb();
@@ -1564,9 +1509,6 @@ function App() {
           </button>
           <button onClick={handlePrepareCertificate} disabled={busy || session?.active || !selectedEmulator}>
             {texts.prepareCa}
-          </button>
-          <button onClick={() => void handleOpenSecuritySettings()} disabled={busy || !selectedEmulator}>
-            {texts.openSecurity}
           </button>
           <button className="primary" onClick={handleStartTracing} disabled={busy || !canStart}>
             {texts.startTracing}
@@ -2081,25 +2023,17 @@ function App() {
             </div>
             <p>{texts.certInstallConsentBody}</p>
             <section className="detail-block">
-              <h3>{texts.certInstallStandardLabel}</h3>
-              <p>{texts.certInstallStandardDesc}</p>
-              <h3>{texts.certInstallRootLabel}</h3>
-              <p>{texts.certInstallRootDesc}</p>
+              <h3>{texts.certInstallFlowLabel}</h3>
+              <p>{texts.certInstallFlowDesc}</p>
             </section>
             <div className="actions modal-actions">
-              <button type="button" disabled={busy} onClick={() => void handleOpenSecuritySettings(true)}>
-                {texts.openSecurity}
-              </button>
-              <button type="button" disabled={busy} onClick={() => void runPrepareCertificateInstall(false)}>
-                {texts.certInstallContinueStandard}
-              </button>
               <button
                 type="button"
                 className="primary"
                 disabled={busy}
-                onClick={() => void runPrepareCertificateInstall(true)}
+                onClick={() => void runPrepareCertificateInstall()}
               >
-                {texts.certInstallContinueRoot}
+                {texts.certInstallContinue}
               </button>
             </div>
           </section>

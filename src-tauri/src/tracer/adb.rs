@@ -168,60 +168,6 @@ pub fn push_file_to_emulator(serial: &str, local: &Path, remote: &str) -> Result
     Ok(())
 }
 
-pub fn launch_certificate_installer(serial: &str, remote_path: &str) -> Result<(), String> {
-    let data_uri = format!("file://{remote_path}");
-    let attempts: [(&str, Vec<String>); 4] = [
-        (
-            "Intent INSTALL con URI del certificado",
-            vec![
-                "-a".to_string(),
-                "android.credentials.INSTALL".to_string(),
-                "-d".to_string(),
-                data_uri.clone(),
-                "-t".to_string(),
-                "application/x-x509-ca-cert".to_string(),
-            ],
-        ),
-        (
-            "Actividad CertInstaller explicita",
-            vec![
-                "-n".to_string(),
-                "com.android.certinstaller/.CertInstallerMain".to_string(),
-                "-a".to_string(),
-                "android.intent.action.VIEW".to_string(),
-                "-d".to_string(),
-                data_uri.clone(),
-                "-t".to_string(),
-                "application/x-x509-ca-cert".to_string(),
-            ],
-        ),
-        (
-            "Intent INSTALL generico",
-            vec!["-a".to_string(), "android.credentials.INSTALL".to_string()],
-        ),
-        (
-            "Pantalla de seguridad de Android",
-            vec![
-                "-a".to_string(),
-                "android.settings.SECURITY_SETTINGS".to_string(),
-            ],
-        ),
-    ];
-
-    let mut failures = Vec::new();
-    for (label, args) in attempts {
-        match run_adb_am_start(serial, &args) {
-            Ok(_) => return Ok(()),
-            Err(err) => failures.push(format!("{label}: {err}")),
-        }
-    }
-
-    Err(format!(
-        "No fue posible abrir una pantalla de instalacion de certificados automaticamente. {}",
-        failures.join(" | ")
-    ))
-}
-
 pub fn open_security_settings(serial: &str) -> Result<(), String> {
     let attempts: [(&str, &str); 2] = [
         ("Pantalla Security", "android.settings.SECURITY_SETTINGS"),
@@ -244,38 +190,6 @@ pub fn open_security_settings(serial: &str) -> Result<(), String> {
         "No fue posible abrir Security settings automaticamente. {}",
         failures.join(" | ")
     ))
-}
-
-pub fn adb_root(serial: &str) -> Result<String, String> {
-    run_adb(&["-s", serial, "root"])
-}
-
-pub fn adb_remount(serial: &str) -> Result<String, String> {
-    run_adb(&["-s", serial, "remount"])
-}
-
-pub fn chmod_remote_file(serial: &str, remote_path: &str, mode: &str) -> Result<(), String> {
-    run_adb(&["-s", serial, "shell", "chmod", mode, remote_path])?;
-    Ok(())
-}
-
-pub fn chown_remote_file(serial: &str, remote_path: &str, owner: &str) -> Result<(), String> {
-    run_adb(&["-s", serial, "shell", "chown", owner, remote_path])?;
-    Ok(())
-}
-
-pub fn remote_file_exists(serial: &str, remote_path: &str) -> Result<bool, String> {
-    match run_adb(&["-s", serial, "shell", "ls", remote_path]) {
-        Ok(_) => Ok(true),
-        Err(err)
-            if err.contains("No such file")
-                || err.contains("not found")
-                || err.contains("No such") =>
-        {
-            Ok(false)
-        }
-        Err(err) => Err(err),
-    }
 }
 
 fn list_emulators(adb_binary: &str) -> Result<(Vec<EmulatorDevice>, usize), String> {
