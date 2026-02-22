@@ -64,12 +64,13 @@ pub fn prepare_certificate_install(
     let (installer_launched, verification_note, instructions) = match open_security_result {
         Ok(_) => (
             true,
-            "Se abrio una pantalla de Encryption/Credentials en el emulador.".to_string(),
+            "Se abrio Install a certificate / Encryption & credentials en el emulador."
+                .to_string(),
             "Certificado copiado al emulador. Completa la instalacion en Android y selecciona el archivo desde Download si corresponde.".to_string(),
         ),
         Err(err) => (
             false,
-            format!("No se pudo abrir Encryption/Credentials automaticamente: {err}"),
+            format!("No se pudo abrir Install a certificate automaticamente: {err}"),
             "Certificado copiado al emulador. Abre manualmente Settings > Security > Encryption & credentials > Install a certificate > CA certificate y selecciona el archivo en Download.".to_string(),
         ),
     };

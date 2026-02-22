@@ -169,16 +169,34 @@ pub fn push_file_to_emulator(serial: &str, local: &Path, remote: &str) -> Result
 }
 
 pub fn open_security_settings(serial: &str) -> Result<(), String> {
-    let attempts: [(&str, Vec<String>); 5] = [
+    let attempts: [(&str, Vec<String>); 8] = [
         (
-            "Pantalla Trusted Credentials (user)",
+            "Install a certificate (AOSP action)",
+            vec![
+                "-a".to_string(),
+                "com.android.credentials.INSTALL".to_string(),
+            ],
+        ),
+        (
+            "Install a certificate (legacy action)",
+            vec!["-a".to_string(), "android.credentials.INSTALL".to_string()],
+        ),
+        (
+            "Install a certificate (explicit activity)",
+            vec![
+                "-n".to_string(),
+                "com.android.settings/.security.CredentialStorage".to_string(),
+            ],
+        ),
+        (
+            "Trusted Credentials (user)",
             vec![
                 "-a".to_string(),
                 "com.android.settings.TRUSTED_CREDENTIALS_USER".to_string(),
             ],
         ),
         (
-            "Pantalla Trusted Credentials",
+            "Trusted Credentials",
             vec![
                 "-a".to_string(),
                 "com.android.settings.TRUSTED_CREDENTIALS".to_string(),
@@ -199,8 +217,11 @@ pub fn open_security_settings(serial: &str) -> Result<(), String> {
             ],
         ),
         (
-            "Install certificate flow",
-            vec!["-a".to_string(), "android.credentials.INSTALL".to_string()],
+            "Security advanced",
+            vec![
+                "-a".to_string(),
+                "com.google.android.settings.security.SECURITY_ADVANCED_SETTINGS".to_string(),
+            ],
         ),
     ];
 
