@@ -95,16 +95,21 @@ pub fn prepare_certificate_install(
             installer_launched: true,
             installation_status: "pendingUserAction".to_string(),
             verification_note,
-            instructions: "Certificado copiado al emulador y pantalla de instalacion abierta. Completa la instalacion en Android (nombre sugerido: HTTP Request Tracer CA).".to_string(),
+            instructions: "Certificado copiado al emulador. Se intento abrir la pantalla de instalacion en Android; si no aparece, abre manualmente Settings > Security > Encryption & credentials > Install a certificate > CA certificate y selecciona el archivo en Download.".to_string(),
         });
     }
 
+    let launch_error = launch_result
+        .err()
+        .unwrap_or_else(|| "No detail available".to_string());
+
     let verification_note = match automation_error {
         Some(automation_err) => format!(
-            "Fallo instalacion automatica: {automation_err}. No fue posible abrir instalador de Android."
+            "Fallo instalacion automatica: {automation_err}. No fue posible abrir instalador de Android: {launch_error}"
         ),
-        None => "No se solicito `adb root` y no fue posible abrir el instalador de certificados en Android."
-            .to_string(),
+        None => format!(
+            "No se solicito `adb root` y no fue posible abrir el instalador de certificados en Android: {launch_error}"
+        ),
     };
 
     let instructions = if allow_adb_root {

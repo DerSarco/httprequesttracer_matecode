@@ -170,20 +170,56 @@ pub fn push_file_to_emulator(serial: &str, local: &Path, remote: &str) -> Result
 
 pub fn launch_certificate_installer(serial: &str, remote_path: &str) -> Result<(), String> {
     let data_uri = format!("file://{remote_path}");
-    run_adb(&[
-        "-s",
-        serial,
-        "shell",
-        "am",
-        "start",
-        "-a",
-        "android.credentials.INSTALL",
-        "-d",
-        &data_uri,
-        "-t",
-        "application/x-x509-ca-cert",
-    ])?;
-    Ok(())
+    let attempts: [(&str, Vec<String>); 4] = [
+        (
+            "Intent INSTALL con URI del certificado",
+            vec![
+                "-a".to_string(),
+                "android.credentials.INSTALL".to_string(),
+                "-d".to_string(),
+                data_uri.clone(),
+                "-t".to_string(),
+                "application/x-x509-ca-cert".to_string(),
+            ],
+        ),
+        (
+            "Actividad CertInstaller explicita",
+            vec![
+                "-n".to_string(),
+                "com.android.certinstaller/.CertInstallerMain".to_string(),
+                "-a".to_string(),
+                "android.intent.action.VIEW".to_string(),
+                "-d".to_string(),
+                data_uri.clone(),
+                "-t".to_string(),
+                "application/x-x509-ca-cert".to_string(),
+            ],
+        ),
+        (
+            "Intent INSTALL generico",
+            vec!["-a".to_string(), "android.credentials.INSTALL".to_string()],
+        ),
+        (
+            "Pantalla de seguridad de Android",
+            vec![
+                "-a".to_string(),
+                "android.settings.SECURITY_SETTINGS".to_string(),
+            ],
+        ),
+    ];
+
+    let mut failures = Vec::new();
+    for (label, args) in attempts {
+        match run_adb_am_start(serial, &args) {
+            Ok(_) => return Ok(()),
+            Err(err) => failures.push(format!("{label}: {err}")),
+        }
+    }
+
+    Err(format!(
+        "No fue posible abrir una pantalla de instalacion de certificados automaticamente. {}",
+        failures.join(" | ")
+    ))
 }
 
 pub fn adb_root(serial: &str) -> Result<String, String> {
@@ -252,6 +288,60 @@ fn list_devices(adb_binary: &str) -> Result<Vec<DeviceEntry>, String> {
 fn run_adb(args: &[&str]) -> Result<String, String> {
     let adb_binary = resolve_adb_binary()?;
     run_adb_with_binary(&adb_binary, args)
+}
+
+fn run_adb_am_start(serial: &str, extra_args: &[String]) -> Result<String, String> {
+    let adb_binary = resolve_adb_binary()?;
+    let mut args = vec![
+        "-s".to_string(),
+        serial.to_string(),
+        "shell".to_string(),
+        "am".to_string(),
+        "start".to_string(),
+        "-W".to_string(),
+    ];
+    args.extend(extra_args.iter().cloned());
+
+    let output = Command::new(&adb_binary)
+        .args(args.iter().map(String::as_str))
+        .output()
+        .map_err(|_| format!("Failed to execute adb at {adb_binary}"))?;
+
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    let stderr = String::from_utf8_lossy(&output.stderr).to_string();
+    let combined = format!("{}\n{}", stdout.trim(), stderr.trim())
+        .trim()
+        .to_string();
+
+    if !output.status.success() {
+        return if combined.is_empty() {
+            Err(format!(
+                "adb command failed: {adb_binary} {}",
+                args.join(" ")
+            ))
+        } else {
+            Err(combined)
+        };
+    }
+
+    if adb_am_start_failed(&combined) {
+        return Err(combined);
+    }
+
+    Ok(combined)
+}
+
+fn adb_am_start_failed(output: &str) -> bool {
+    let normalized = output.to_ascii_lowercase();
+    let markers = [
+        "error:",
+        "exception",
+        "unable to resolve intent",
+        "activity not started",
+        "permission denied",
+    ];
+
+    markers.iter().any(|marker| normalized.contains(marker))
 }
 
 fn run_adb_with_binary(adb_binary: &str, args: &[&str]) -> Result<String, String> {
