@@ -34,3 +34,23 @@ Salida principal:
 - `Start Tracing` aplica proxy y captura requests.
 - `Stop Tracing` revierte proxy del emulador.
 
+## Release desde GitHub (macOS)
+
+El workflow de release esta en:
+
+- `.github/workflows/release-from-branch.yml`
+
+Reglas actuales:
+
+- Se dispara al pushear una rama `release/vX.Y.Z` (o manual con `workflow_dispatch`).
+- Valida que la version coincida en:
+  - `package.json`
+  - `src-tauri/Cargo.toml`
+  - `src-tauri/tauri.conf.json`
+- Genera release draft en GitHub y sube artefactos:
+  - `HTTP-Request-Tracer-<version>-macos-aarch64.zip`
+  - `HTTP-Request-Tracer-<version>-macos-x64.zip`
+
+Playbook operativo detallado:
+
+- `docs/release-macos-playbook.md`

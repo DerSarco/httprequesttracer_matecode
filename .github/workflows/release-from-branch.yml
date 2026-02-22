@@ -67,8 +67,9 @@ jobs:
         shell: bash
         run: |
           branch_version="${{ steps.version.outputs.version }}"
-          package_version="$(node -p \"require('./package.json').version\")"
+          package_version="$(node -p "require('./package.json').version")"
           cargo_version="$(grep -m1 '^version = "' src-tauri/Cargo.toml | sed -E 's/version = "([^"]+)"/\1/')"
+          tauri_conf_version="$(node -p "JSON.parse(require('fs').readFileSync('src-tauri/tauri.conf.json', 'utf8')).version")"
 
           if [[ "$package_version" != "$branch_version" ]]; then
             echo "package.json version ($package_version) does not match release version ($branch_version)"
@@ -77,6 +78,11 @@ jobs:
 
           if [[ "$cargo_version" != "$branch_version" ]]; then
             echo "src-tauri/Cargo.toml version ($cargo_version) does not match release version ($branch_version)"
+            exit 1
+          fi
+
+          if [[ "$tauri_conf_version" != "$branch_version" ]]; then
+            echo "src-tauri/tauri.conf.json version ($tauri_conf_version) does not match release version ($branch_version)"
             exit 1
           fi
 
@@ -91,6 +97,16 @@ jobs:
             const { owner, repo } = context.repo;
             const tag = process.env.TAG;
             const version = process.env.VERSION;
+            const fs = require('fs');
+            const templatePath = '.github/release-notes-template.md';
+            const releaseDate = new Date().toISOString().slice(0, 10);
+            let releaseBody = '';
+            if (fs.existsSync(templatePath)) {
+              releaseBody = fs.readFileSync(templatePath, 'utf8')
+                .replaceAll('{{TAG}}', tag)
+                .replaceAll('{{VERSION}}', version)
+                .replaceAll('{{DATE}}', releaseDate);
+            }
             let release;
 
             try {
@@ -111,6 +127,7 @@ jobs:
                 draft: true,
                 prerelease: version.includes('-'),
                 generate_release_notes: true,
+                body: releaseBody,
               });
             }
 
@@ -124,13 +141,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - runner: macos-latest
-            target: aarch64-apple-darwin
+          - target: aarch64-apple-darwin
             suffix: macos-aarch64
-          - runner: macos-13
-            target: x86_64-apple-darwin
+          - target: x86_64-apple-darwin
             suffix: macos-x64
-    runs-on: ${{ matrix.runner }}
+    runs-on: macos-latest
 
     steps:
       - name: Checkout repository
