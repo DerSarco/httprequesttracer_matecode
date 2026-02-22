@@ -12,7 +12,7 @@ on:
         type: string
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref_name }}-${{ github.event.inputs.version || 'auto' }}
@@ -22,6 +22,8 @@ jobs:
   prepare:
     name: Resolve version and prepare release
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     outputs:
       version: ${{ steps.version.outputs.version }}
       tag: ${{ steps.version.outputs.tag }}
@@ -137,6 +139,8 @@ jobs:
   build_macos:
     name: Build macOS bundle (${{ matrix.target }})
     needs: prepare
+    permissions:
+      contents: write
     strategy:
       fail-fast: false
       matrix:

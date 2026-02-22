@@ -87,6 +87,12 @@ This project depends on third-party open source packages under their own license
 
 - Full notices: `THIRD_PARTY_NOTICES.md`
 
+## Contributing and security
+
+- Contribution guidelines: `CONTRIBUTING.md`
+- Vulnerability reporting policy: `SECURITY.md`
+- Maintainer hardening checklist: `docs/repo-hardening-checklist.md`
+
 ## Documentation
 
 - `docs/mvp-01-configuracion-preferencias.md`
@@ -95,6 +101,7 @@ This project depends on third-party open source packages under their own license
 - `docs/mvp-08-testing-strategy.md`
 - `docs/mvp-09-packaging-guide.md`
 - `docs/mvp-15-guardrails-interceptacion.md`
+- `docs/repo-hardening-checklist.md`
 - `docs/spike-05-tls-pinning-trust-model.md`
 - `docs/spike-06-performance-baseline.md`
 

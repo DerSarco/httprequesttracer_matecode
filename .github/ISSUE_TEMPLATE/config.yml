@@ -1,0 +1,5 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability report (private)
+    url: https://github.com/DerSarco/httprequesttracer_matecode/security/advisories/new
+    about: Please report security vulnerabilities privately using GitHub Security Advisories.
