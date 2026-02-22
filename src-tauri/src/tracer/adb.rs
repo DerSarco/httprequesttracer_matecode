@@ -169,17 +169,43 @@ pub fn push_file_to_emulator(serial: &str, local: &Path, remote: &str) -> Result
 }
 
 pub fn open_security_settings(serial: &str) -> Result<(), String> {
-    let attempts: [(&str, &str); 2] = [
+    let attempts: [(&str, Vec<String>); 5] = [
         (
-            "Pantalla Install certificate (Encryption & credentials)",
-            "android.credentials.INSTALL",
+            "Pantalla Trusted Credentials (user)",
+            vec![
+                "-a".to_string(),
+                "com.android.settings.TRUSTED_CREDENTIALS_USER".to_string(),
+            ],
         ),
-        ("Pantalla Security", "android.settings.SECURITY_SETTINGS"),
+        (
+            "Pantalla Trusted Credentials",
+            vec![
+                "-a".to_string(),
+                "com.android.settings.TRUSTED_CREDENTIALS".to_string(),
+            ],
+        ),
+        (
+            "Security dashboard",
+            vec![
+                "-a".to_string(),
+                "android.settings.SECURITY_SETTINGS".to_string(),
+            ],
+        ),
+        (
+            "Security dashboard activity",
+            vec![
+                "-n".to_string(),
+                "com.android.settings/.Settings$SecurityDashboardActivity".to_string(),
+            ],
+        ),
+        (
+            "Install certificate flow",
+            vec!["-a".to_string(), "android.credentials.INSTALL".to_string()],
+        ),
     ];
 
     let mut failures = Vec::new();
-    for (label, action) in attempts {
-        let args = vec!["-a".to_string(), action.to_string()];
+    for (label, args) in attempts {
         match run_adb_am_start(serial, &args) {
             Ok(_) => return Ok(()),
             Err(err) => failures.push(format!("{label}: {err}")),
