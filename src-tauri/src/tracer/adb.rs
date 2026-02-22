@@ -222,6 +222,30 @@ pub fn launch_certificate_installer(serial: &str, remote_path: &str) -> Result<(
     ))
 }
 
+pub fn open_security_settings(serial: &str) -> Result<(), String> {
+    let attempts: [(&str, &str); 2] = [
+        ("Pantalla Security", "android.settings.SECURITY_SETTINGS"),
+        (
+            "Pantalla Trusted Credentials",
+            "android.settings.TRUSTED_CREDENTIALS_USER",
+        ),
+    ];
+
+    let mut failures = Vec::new();
+    for (label, action) in attempts {
+        let args = vec!["-a".to_string(), action.to_string()];
+        match run_adb_am_start(serial, &args) {
+            Ok(_) => return Ok(()),
+            Err(err) => failures.push(format!("{label}: {err}")),
+        }
+    }
+
+    Err(format!(
+        "No fue posible abrir Security settings automaticamente. {}",
+        failures.join(" | ")
+    ))
+}
+
 pub fn adb_root(serial: &str) -> Result<String, String> {
     run_adb(&["-s", serial, "root"])
 }

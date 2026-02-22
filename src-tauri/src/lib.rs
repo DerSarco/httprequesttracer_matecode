@@ -131,6 +131,17 @@ fn prepare_certificate_install(
 }
 
 #[tauri::command]
+fn open_security_settings(emulator_serial: String) -> Result<(), String> {
+    if emulator_serial.trim().is_empty() {
+        return Err("Select an emulator before opening Security settings".to_string());
+    }
+
+    tracer::adb_controller::ensure_adb_available()?;
+    tracer::adb_controller::ensure_emulator_online(&emulator_serial)?;
+    tracer::adb_controller::open_security_settings(&emulator_serial)
+}
+
+#[tauri::command]
 async fn start_tracing(
     emulator_serial: String,
     proxy_host: String,
@@ -451,6 +462,7 @@ pub fn run() {
             configure_interception,
             decide_intercept_request,
             prepare_certificate_install,
+            open_security_settings,
             start_tracing,
             stop_tracing
         ])

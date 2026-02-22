@@ -154,6 +154,9 @@ type LocaleTexts = {
   proxyPort: string;
   refresh: string;
   prepareCa: string;
+  openSecurity: string;
+  openingSecurity: string;
+  securityOpened: string;
   certInstallConsentTitle: string;
   certInstallConsentBody: string;
   certInstallStandardLabel: string;
@@ -325,6 +328,10 @@ const LOCALES: Record<Language, LocaleTexts> = {
     proxyPort: "Proxy port",
     refresh: "Refresh",
     prepareCa: "Prepare CA Install",
+    openSecurity: "Abrir Security",
+    openingSecurity: "Abriendo Security en el emulador...",
+    securityOpened:
+      "Security abierta en el emulador. Sigue: Encryption & credentials > Install a certificate > CA certificate.",
     certInstallConsentTitle: "Permisos para instalacion de certificado",
     certInstallConsentBody:
       "Puedes continuar con instalacion manual asistida o permitir intento avanzado con `adb root`.",
@@ -474,6 +481,10 @@ const LOCALES: Record<Language, LocaleTexts> = {
     proxyPort: "Proxy port",
     refresh: "Refresh",
     prepareCa: "Prepare CA Install",
+    openSecurity: "Open Security",
+    openingSecurity: "Opening Security on emulator...",
+    securityOpened:
+      "Security opened on emulator. Then go to: Encryption & credentials > Install a certificate > CA certificate.",
     certInstallConsentTitle: "Certificate install permissions",
     certInstallConsentBody:
       "You can continue with assisted manual installation or allow an advanced `adb root` attempt.",
@@ -1167,6 +1178,32 @@ function App() {
     setCertInstallModalOpen(true);
   }
 
+  async function handleOpenSecuritySettings(closeModal = false) {
+    if (!selectedEmulator) {
+      setErrorText("Selecciona un emulador para abrir Security.");
+      return;
+    }
+
+    if (closeModal) {
+      setCertInstallModalOpen(false);
+    }
+
+    setBusy(true);
+    setErrorText(null);
+    setInfoText(texts.openingSecurity);
+    try {
+      await invoke("open_security_settings", {
+        emulatorSerial: selectedEmulator,
+      });
+      setInfoText(texts.securityOpened);
+    } catch (error) {
+      setErrorText(toUserError(error));
+      setInfoText(null);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function runPrepareCertificateInstall(allowAdbRoot: boolean) {
     if (!selectedEmulator) {
       setErrorText("Selecciona un emulador para preparar el certificado.");
@@ -1527,6 +1564,9 @@ function App() {
           </button>
           <button onClick={handlePrepareCertificate} disabled={busy || session?.active || !selectedEmulator}>
             {texts.prepareCa}
+          </button>
+          <button onClick={() => void handleOpenSecuritySettings()} disabled={busy || !selectedEmulator}>
+            {texts.openSecurity}
           </button>
           <button className="primary" onClick={handleStartTracing} disabled={busy || !canStart}>
             {texts.startTracing}
@@ -2047,6 +2087,9 @@ function App() {
               <p>{texts.certInstallRootDesc}</p>
             </section>
             <div className="actions modal-actions">
+              <button type="button" disabled={busy} onClick={() => void handleOpenSecuritySettings(true)}>
+                {texts.openSecurity}
+              </button>
               <button type="button" disabled={busy} onClick={() => void runPrepareCertificateInstall(false)}>
                 {texts.certInstallContinueStandard}
               </button>
