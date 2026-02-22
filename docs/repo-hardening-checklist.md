@@ -14,6 +14,10 @@ This checklist contains GitHub repository settings that are not stored in source
 - Disable force pushes.
 - Disable branch deletion.
 
+Automation helper:
+
+- Run `scripts/apply-branch-protection.sh DerSarco/httprequesttracer_matecode master` after repo visibility/plan allows branch protection API.
+
 ## Pull Request Safety
 
 - Require linear history or squash merge policy (team preference).
