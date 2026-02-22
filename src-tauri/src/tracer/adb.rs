@@ -169,72 +169,117 @@ pub fn push_file_to_emulator(serial: &str, local: &Path, remote: &str) -> Result
 }
 
 pub fn open_security_settings(serial: &str) -> Result<(), String> {
-    let attempts: [(&str, Vec<String>); 8] = [
-        (
-            "Install a certificate (AOSP action)",
-            vec![
+    struct LaunchAttempt {
+        label: &'static str,
+        args: Vec<String>,
+        required_markers: &'static [&'static str],
+        forbidden_markers: &'static [&'static str],
+    }
+
+    let attempts = vec![
+        LaunchAttempt {
+            label: "Install a certificate (AOSP action)",
+            args: vec![
                 "-a".to_string(),
                 "com.android.credentials.INSTALL".to_string(),
             ],
-        ),
-        (
-            "Install a certificate (legacy action)",
-            vec!["-a".to_string(), "android.credentials.INSTALL".to_string()],
-        ),
-        (
-            "Install a certificate (explicit activity)",
-            vec![
+            required_markers: &["credentialstorage"],
+            forbidden_markers: &["documentsui", "pickactivity"],
+        },
+        LaunchAttempt {
+            label: "Install a certificate (explicit activity)",
+            args: vec![
                 "-n".to_string(),
                 "com.android.settings/.security.CredentialStorage".to_string(),
             ],
-        ),
-        (
-            "Trusted Credentials (user)",
-            vec![
+            required_markers: &["credentialstorage"],
+            forbidden_markers: &["documentsui", "pickactivity"],
+        },
+        LaunchAttempt {
+            label: "Security advanced (AOSP)",
+            args: vec![
                 "-a".to_string(),
-                "com.android.settings.TRUSTED_CREDENTIALS_USER".to_string(),
+                "com.android.settings.security.SECURITY_ADVANCED_SETTINGS".to_string(),
             ],
-        ),
-        (
-            "Trusted Credentials",
-            vec![
-                "-a".to_string(),
-                "com.android.settings.TRUSTED_CREDENTIALS".to_string(),
-            ],
-        ),
-        (
-            "Security dashboard",
-            vec![
-                "-a".to_string(),
-                "android.settings.SECURITY_SETTINGS".to_string(),
-            ],
-        ),
-        (
-            "Security dashboard activity",
-            vec![
-                "-n".to_string(),
-                "com.android.settings/.Settings$SecurityDashboardActivity".to_string(),
-            ],
-        ),
-        (
-            "Security advanced",
-            vec![
+            required_markers: &[],
+            forbidden_markers: &[],
+        },
+        LaunchAttempt {
+            label: "Security advanced (Google)",
+            args: vec![
                 "-a".to_string(),
                 "com.google.android.settings.security.SECURITY_ADVANCED_SETTINGS".to_string(),
             ],
-        ),
+            required_markers: &[],
+            forbidden_markers: &[],
+        },
+        LaunchAttempt {
+            label: "Security dashboard",
+            args: vec![
+                "-a".to_string(),
+                "android.settings.SECURITY_SETTINGS".to_string(),
+            ],
+            required_markers: &[],
+            forbidden_markers: &[],
+        },
+        LaunchAttempt {
+            label: "Trusted Credentials (user)",
+            args: vec![
+                "-a".to_string(),
+                "com.android.settings.TRUSTED_CREDENTIALS_USER".to_string(),
+            ],
+            required_markers: &[],
+            forbidden_markers: &[],
+        },
+        LaunchAttempt {
+            label: "Trusted Credentials",
+            args: vec![
+                "-a".to_string(),
+                "com.android.settings.TRUSTED_CREDENTIALS".to_string(),
+            ],
+            required_markers: &[],
+            forbidden_markers: &[],
+        },
+        LaunchAttempt {
+            label: "Install a certificate (legacy action)",
+            args: vec![
+                "-a".to_string(),
+                "android.credentials.INSTALL".to_string(),
+            ],
+            required_markers: &["credentialstorage"],
+            forbidden_markers: &["documentsui", "pickactivity"],
+        },
     ];
 
     let mut failures = Vec::new();
-    for (label, args) in attempts {
-        match run_adb_am_start(serial, &args) {
-            Ok(_) => return Ok(()),
-            Err(err) => failures.push(format!("{label}: {err}")),
+    for attempt in attempts {
+        match run_adb_am_start(serial, &attempt.args) {
+            Ok(output) => {
+                let normalized = output.to_ascii_lowercase();
+                if contains_any_marker(&normalized, attempt.forbidden_markers) {
+                    failures.push(format!(
+                        "{}: opened unsupported target ({})",
+                        attempt.label, output
+                    ));
+                    continue;
+                }
+                if !attempt.required_markers.is_empty()
+                    && !contains_any_marker(&normalized, attempt.required_markers)
+                {
+                    failures.push(format!(
+                        "{}: target did not match expected screen ({})",
+                        attempt.label, output
+                    ));
+                    continue;
+                }
+                return Ok(());
+            }
+            Err(err) => failures.push(format!("{}: {err}", attempt.label)),
         }
     }
 
     Err(format!(
-        "No fue posible abrir Security settings automaticamente. {}",
+        "No fue posible abrir Install a certificate ni Encryption & credentials automaticamente. {}",
         failures.join(" | ")
     ))
 }
@@ -331,6 +376,12 @@ fn adb_am_start_failed(output: &str) -> bool {
     ];
 
     markers.iter().any(|marker| normalized.contains(marker))
+}
+
+fn contains_any_marker(output_normalized: &str, markers: &[&str]) -> bool {
+    markers
+        .iter()
+        .any(|marker| output_normalized.contains(&marker.to_ascii_lowercase()))
 }
 
 fn run_adb_with_binary(adb_binary: &str, args: &[&str]) -> Result<String, String> {
