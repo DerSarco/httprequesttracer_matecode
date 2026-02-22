@@ -56,6 +56,17 @@ let currentCapturedRequests: Array<{
 const invokeMock = invoke as InvokeMock;
 
 beforeEach(() => {
+  localStorage.setItem(
+    "http-request-tracer.preferences.v1",
+    JSON.stringify({
+      language: "en",
+      theme: "light",
+      fontScale: "medium",
+      showSensitiveData: false,
+      certTrusted: false,
+    }),
+  );
+
   currentCapturedRequests = [];
   invokeMock.mockImplementation(async (cmd: string) => {
     switch (cmd) {
@@ -215,7 +226,7 @@ describe("App", () => {
     await userEvent.type(screen.getByLabelText("Filtro status code"), "401");
     expect(screen.getByText("auth.example.com")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: "Limpiar filtros" }));
+    await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
     expect(screen.getByText("example.com")).toBeInTheDocument();
     expect(screen.getByText("auth.example.com")).toBeInTheDocument();
   });
@@ -248,6 +259,6 @@ describe("App", () => {
 
     expect(await screen.findByText("Sesion de requests limpiada.")).toBeInTheDocument();
     expect(screen.queryByText("clear.example.com")).not.toBeInTheDocument();
-    expect(screen.getByText("Sin trafico capturado aun.")).toBeInTheDocument();
+    expect(screen.getByText("No traffic captured yet.")).toBeInTheDocument();
   });
 });
