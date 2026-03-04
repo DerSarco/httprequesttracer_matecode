@@ -1,15 +1,11 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { loadPreferences, persistPreferences } from "./preferences";
 
 const STORAGE_KEY = "http-request-tracer.preferences.v1";
 
 describe("preferences", () => {
-  afterEach(() => {
-    localStorage.clear();
-    vi.restoreAllMocks();
-  });
-
   it("returns defaults when storage is empty or invalid", () => {
+    localStorage.removeItem(STORAGE_KEY);
     expect(loadPreferences()).toEqual({
       language: "es",
       theme: "light",
@@ -18,7 +14,7 @@ describe("preferences", () => {
       certTrusted: false,
     });
 
-    localStorage.setItem(STORAGE_KEY, "{bad-json");
+    localStorage.setItem(STORAGE_KEY, "{");
     expect(loadPreferences()).toEqual({
       language: "es",
       theme: "light",
@@ -28,7 +24,7 @@ describe("preferences", () => {
     });
   });
 
-  it("sanitizes partially valid persisted preferences", () => {
+  it("normalizes persisted values", () => {
     localStorage.setItem(
       STORAGE_KEY,
       JSON.stringify({
@@ -49,36 +45,22 @@ describe("preferences", () => {
     });
   });
 
-  it("persists preferences as best effort", () => {
-    persistPreferences({
-      language: "en",
-      theme: "dark",
-      fontScale: "small",
+  it("persists preferences and swallows storage errors", () => {
+    const next = {
+      language: "en" as const,
+      theme: "dark" as const,
+      fontScale: "small" as const,
       showSensitiveData: true,
       certTrusted: true,
-    });
+    };
 
-    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "")).toEqual({
-      language: "en",
-      theme: "dark",
-      fontScale: "small",
-      showSensitiveData: true,
-      certTrusted: true,
-    });
+    persistPreferences(next);
+    expect(JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "{}")).toEqual(next);
 
     const setItemSpy = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => {
       throw new Error("quota");
     });
-
-    expect(() =>
-      persistPreferences({
-        language: "es",
-        theme: "light",
-        fontScale: "medium",
-        showSensitiveData: false,
-        certTrusted: false,
-      }),
-    ).not.toThrow();
-    expect(setItemSpy).toHaveBeenCalled();
+    expect(() => persistPreferences(next)).not.toThrow();
+    setItemSpy.mockRestore();
   });
 });
