@@ -312,7 +312,8 @@ describe("App", () => {
     render(<App />);
 
     expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
-    expect(screen.getByText("https://example.com/api?foo=bar&baz=qux")).toBeInTheDocument();
+    expect(screen.getByText("example.com")).toBeInTheDocument();
+    await userEvent.click(screen.getAllByText("/api?foo=bar&baz=qux")[0]);
 
     await userEvent.click(screen.getByRole("button", { name: "Headers" }));
     expect(screen.getByText("Authorization")).toBeInTheDocument();
