@@ -4,7 +4,7 @@ Fecha: 2026-02-19
 
 ## Resumen
 
-El tracer usa MITM local con una CA propia (`HTTP Request Tracer Local CA`).
+El tracer usa MITM local con una CA propia (`Matecode HTTP Tracer Local CA`).
 Para inspeccion HTTPS, el cliente Android debe confiar esa CA.
 
 ## Casos soportados
@@ -31,6 +31,7 @@ Para inspeccion HTTPS, el cliente Android debe confiar esa CA.
 
 - Mostrar mensaje claro:
   - "HTTPS requiere instalar y confiar la CA local en el emulador."
+  - "La identidad visible del certificado es Matecode; eso no reemplaza el paso de trust."
   - "Apps con TLS pinning pueden no ser interceptables."
 - Agregar checklist guiado en onboarding:
   1. Preparar e instalar CA.

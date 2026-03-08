@@ -870,7 +870,18 @@ fn now_unix_ms() -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{CaptureStore, CapturedExchange};
+    use std::time::Duration;
+
+    use tokio::sync::oneshot;
+
+    use super::{
+        apply_intercept_patch, render_body_preview, Body, CaptureHandler, CaptureStore,
+        CapturedExchange, HeaderEntry, InterceptAction, InterceptDecisionInput,
+        InterceptionConfigInput, InterceptionController, InterceptionRule,
+        InterceptWaitResult, PendingInterceptRequest, Request, SharedCaptureStore,
+        SharedInterceptionController, DEFAULT_MAX_PENDING_INTERCEPTS,
+        MAX_EDITABLE_BODY_BYTES, MAX_INTERCEPT_TIMEOUT_MS, MIN_INTERCEPT_TIMEOUT_MS,
+    };
 
     #[test]
     fn capture_store_behaves_as_circular_buffer() {
@@ -894,6 +905,159 @@ mod tests {
         assert!(store.snapshot().is_empty());
     }
 
+    #[test]
+    fn interception_config_clamps_timeout_and_normalizes_rules() {
+        let mut controller = InterceptionController::default();
+        let snapshot = controller.apply_config(InterceptionConfigInput {
+            enabled: true,
+            timeout_ms: Some(MAX_INTERCEPT_TIMEOUT_MS + 10_000),
+            rules: Some(vec![
+                InterceptionRule {
+                    id: "rule-1".to_string(),
+                    enabled: true,
+                    host_contains: " Api.Example.com ".to_string(),
+                    path_contains: " /Login ".to_string(),
+                    method: " post ".to_string(),
+                },
+                InterceptionRule {
+                    id: "   ".to_string(),
+                    enabled: true,
+                    host_contains: "ignored".to_string(),
+                    path_contains: String::new(),
+                    method: String::new(),
+                },
+            ]),
+        });
+
+        assert!(snapshot.enabled);
+        assert_eq!(snapshot.timeout_ms, MAX_INTERCEPT_TIMEOUT_MS);
+        assert_eq!(snapshot.rules.len(), 1);
+        assert_eq!(snapshot.rules[0].host_contains, "api.example.com");
+        assert_eq!(snapshot.rules[0].path_contains, "/login");
+        assert_eq!(snapshot.rules[0].method, "POST");
+    }
+
+    #[test]
+    fn apply_decision_delivers_drop_and_clears_pending() {
+        let mut controller = InterceptionController::default();
+        let (tx, mut rx) = oneshot::channel();
+        controller.register_pending(sample_pending_request(7), tx);
+
+        controller
+            .apply_decision(InterceptDecisionInput {
+                request_id: 7,
+                action: "drop".to_string(),
+                method: None,
+                url: None,
+                headers: None,
+                body: None,
+                query: None,
+                cookies: None,
+            })
+            .expect("drop decision should be accepted");
+
+        let decision = rx.try_recv().expect("decision should be delivered");
+        assert!(matches!(decision.action, InterceptAction::Drop));
+        assert_eq!(controller.snapshot().pending_count, 0);
+    }
+
+    #[test]
+    fn register_pending_evicts_oldest_entries_when_queue_reaches_limit() {
+        let mut controller = InterceptionController::default();
+
+        for id in 1..=(DEFAULT_MAX_PENDING_INTERCEPTS as u64 + 1) {
+            let (tx, _rx) = oneshot::channel();
+            controller.register_pending(sample_pending_request(id), tx);
+        }
+
+        let snapshot = controller.snapshot();
+        assert_eq!(snapshot.pending_count, DEFAULT_MAX_PENDING_INTERCEPTS);
+        assert_eq!(snapshot.pending_requests.first().map(|request| request.id), Some(2));
+        assert_eq!(
+            snapshot.pending_requests.last().map(|request| request.id),
+            Some(DEFAULT_MAX_PENDING_INTERCEPTS as u64 + 1)
+        );
+    }
+
+    #[tokio::test]
+    async fn wait_intercept_decision_times_out_and_cleans_pending() {
+        let mut controller = InterceptionController::default();
+        controller.enabled = true;
+        controller.timeout_ms = MIN_INTERCEPT_TIMEOUT_MS.min(5);
+
+        let controller: SharedInterceptionController =
+            std::sync::Arc::new(tokio::sync::Mutex::new(controller));
+        let store: SharedCaptureStore =
+            std::sync::Arc::new(std::sync::Mutex::new(CaptureStore::default()));
+        let handler = CaptureHandler::new(store, controller.clone());
+
+        let result = tokio::time::timeout(
+            Duration::from_millis(100),
+            handler.wait_intercept_decision(
+                "POST",
+                "api.example.com",
+                "/login",
+                sample_pending_request(9),
+            ),
+        )
+        .await
+        .expect("interception wait should complete");
+
+        assert!(matches!(result, InterceptWaitResult::Timeout));
+
+        let snapshot = controller.lock().await.snapshot();
+        assert_eq!(snapshot.pending_count, 0);
+    }
+
+    #[test]
+    fn apply_intercept_patch_updates_request_parts_and_truncates_large_body() {
+        let request = Request::builder()
+            .method("POST")
+            .uri("https://example.com/login?before=1")
+            .body(Body::empty())
+            .expect("request should build");
+        let (mut parts, _) = request.into_parts();
+        let mut body_bytes = Vec::new();
+
+        apply_intercept_patch(
+            &mut parts,
+            &mut body_bytes,
+            super::InterceptPatch {
+                method: Some("PATCH".to_string()),
+                url: Some("https://example.com/session".to_string()),
+                headers: Some(vec![HeaderEntry {
+                    name: "x-test".to_string(),
+                    value: "one".to_string(),
+                }]),
+                body: Some("x".repeat(MAX_EDITABLE_BODY_BYTES + 128)),
+                query: Some("via=editor".to_string()),
+                cookies: Some("session=updated".to_string()),
+            },
+        );
+
+        assert_eq!(parts.method.as_str(), "PATCH");
+        assert_eq!(parts.uri.to_string(), "https://example.com/session?via=editor");
+        assert_eq!(body_bytes.len(), MAX_EDITABLE_BODY_BYTES);
+        assert_eq!(parts.headers.get("x-test").unwrap(), "one");
+        assert_eq!(parts.headers.get("cookie").unwrap(), "session=updated");
+        assert_eq!(
+            parts.headers.get("content-length").unwrap(),
+            MAX_EDITABLE_BODY_BYTES.to_string().as_str()
+        );
+    }
+
+    #[test]
+    fn render_body_preview_uses_safe_fallbacks_for_binary_and_invalid_encoded_payloads() {
+        let binary_preview = render_body_preview(&[0_u8, 159, 146, 150], Some("application/octet-stream"), None)
+            .expect("binary preview should return fallback text");
+        assert!(binary_preview.contains("Payload no textual"));
+
+        let invalid_gzip_preview = render_body_preview(&[1_u8, 2, 3, 4], Some("text/plain"), Some("gzip"))
+            .expect("invalid gzip preview should return fallback text");
+        assert!(invalid_gzip_preview.contains("content-encoding 'gzip'"));
+        assert!(invalid_gzip_preview.contains("no fue posible decodificarlo"));
+    }
+
     fn sample_exchange(id: u64) -> CapturedExchange {
         CapturedExchange {
             id,
@@ -914,6 +1078,25 @@ mod tests {
             intercept_status: None,
             original_method: None,
             original_url: None,
+        }
+    }
+
+    fn sample_pending_request(id: u64) -> PendingInterceptRequest {
+        PendingInterceptRequest {
+            id,
+            started_at_unix_ms: 0,
+            method: "POST".to_string(),
+            url: "https://api.example.com/login".to_string(),
+            host: "api.example.com".to_string(),
+            path: "/login".to_string(),
+            headers: vec![HeaderEntry {
+                name: "content-type".to_string(),
+                value: "application/json".to_string(),
+            }],
+            body: Some("{\"ok\":true}".to_string()),
+            body_size: 11,
+            status: "pending".to_string(),
+            last_error: None,
         }
     }
 }

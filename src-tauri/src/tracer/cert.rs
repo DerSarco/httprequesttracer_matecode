@@ -10,9 +10,12 @@ use super::adb;
 
 const APP_DIR_NAME: &str = ".http-request-tracer";
 const CA_DIR_NAME: &str = "ca";
-const CA_CERT_PEM_FILE: &str = "http-request-tracer-ca.pem";
-const CA_CERT_DER_FILE: &str = "http-request-tracer-ca.cer";
-const CA_KEY_FILE: &str = "http-request-tracer-ca.key";
+const CA_CERT_PEM_FILE: &str = "matecode-http-tracer-ca.pem";
+const CA_CERT_DER_FILE: &str = "matecode-http-tracer-ca.cer";
+const CA_KEY_FILE: &str = "matecode-http-tracer-ca.key";
+const CA_DISPLAY_NAME: &str = "Matecode HTTP Tracer Local CA";
+const CA_ORGANIZATION: &str = "Matecode";
+const CA_ORGANIZATIONAL_UNIT: &str = "Developer Tools";
 
 #[derive(Debug, Clone)]
 pub struct CaBundlePaths {
@@ -56,22 +59,29 @@ pub fn prepare_certificate_install(
     emulator_serial: &str,
     paths: &CaBundlePaths,
 ) -> Result<CertificateSetupResult, String> {
-    let remote_path = "/sdcard/Download/http-request-tracer-ca.cer";
+    let remote_path = emulator_cert_remote_path();
     let local_cert = paths.cert_der.to_string_lossy().to_string();
 
-    adb::push_file_to_emulator(emulator_serial, paths.cert_der.as_path(), remote_path)?;
+    adb::push_file_to_emulator(emulator_serial, paths.cert_der.as_path(), &remote_path)?;
     let open_security_result = adb::open_security_settings(emulator_serial);
     let (installer_launched, verification_note, instructions) = match open_security_result {
         Ok(_) => (
             true,
-            "Se abrio Install a certificate / Encryption & credentials en el emulador."
-                .to_string(),
-            "Certificado copiado al emulador. Completa la instalacion en Android y selecciona el archivo desde Download si corresponde.".to_string(),
+            format!(
+                "Se abrio Install a certificate / Encryption & credentials en el emulador. La CA visible sera '{CA_DISPLAY_NAME}'."
+            ),
+            format!(
+                "Certificado '{CA_DISPLAY_NAME}' copiado al emulador. Completa la instalacion en Android y selecciona el archivo desde Download si corresponde. Ver que Android muestre ese nombre no implica confianza hasta terminar la instalacion."
+            ),
         ),
         Err(err) => (
             false,
-            format!("No se pudo abrir Install a certificate automaticamente: {err}"),
-            "Certificado copiado al emulador. Abre manualmente Settings > Security > Encryption & credentials > Install a certificate > CA certificate y selecciona el archivo en Download.".to_string(),
+            format!(
+                "No se pudo abrir Install a certificate automaticamente: {err}. La CA a instalar aparecera como '{CA_DISPLAY_NAME}'."
+            ),
+            format!(
+                "Certificado '{CA_DISPLAY_NAME}' copiado al emulador. Abre manualmente Settings > Security > Encryption & credentials > Install a certificate > CA certificate y selecciona el archivo en Download. Ese nombre identifica el certificado, pero la confianza HTTPS solo queda habilitada cuando Android termina la instalacion."
+            ),
         ),
     };
 
@@ -98,7 +108,7 @@ fn generate_ca_bundle(cert_pem: &Path, cert_der: &Path, key_pem: &Path) -> Resul
             "-days",
             "3650",
             "-subj",
-            "/CN=HTTP Request Tracer Local CA/O=HTTP Request Tracer",
+            &ca_subject(),
             "-addext",
             "basicConstraints=critical,CA:TRUE",
             "-addext",
@@ -126,6 +136,16 @@ fn generate_ca_bundle(cert_pem: &Path, cert_der: &Path, key_pem: &Path) -> Resul
     )?;
 
     Ok(())
+}
+
+fn emulator_cert_remote_path() -> String {
+    format!("/sdcard/Download/{CA_CERT_DER_FILE}")
+}
+
+fn ca_subject() -> String {
+    format!(
+        "/CN={CA_DISPLAY_NAME}/O={CA_ORGANIZATION}/OU={CA_ORGANIZATIONAL_UNIT}"
+    )
 }
 
 fn run_command(bin: &str, args: &[&str]) -> Result<(), String> {
@@ -159,4 +179,22 @@ fn path_as_str(path: &Path) -> Result<String, String> {
     path.to_str()
         .map(ToOwned::to_owned)
         .ok_or("Invalid non-UTF8 path".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ca_subject, emulator_cert_remote_path};
+
+    #[test]
+    fn matecode_identity_is_reflected_in_subject_and_install_path() {
+        let subject = ca_subject();
+
+        assert!(subject.contains("/CN=Matecode HTTP Tracer Local CA"));
+        assert!(subject.contains("/O=Matecode"));
+        assert!(subject.contains("/OU=Developer Tools"));
+        assert_eq!(
+            emulator_cert_remote_path(),
+            "/sdcard/Download/matecode-http-tracer-ca.cer"
+        );
+    }
 }
