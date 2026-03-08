@@ -13,7 +13,7 @@ HTTP Request Tracer aims to provide a practical, free, local desktop alternative
 
 - Clean request explorer with details for headers, params, cookies, and bodies.
 - Start/stop tracing directly from the app by managing emulator proxy settings over ADB.
-- HTTPS support through local CA generation + guided certificate install flow.
+- HTTPS support through a Matecode-branded local CA + guided certificate install flow.
 - Interception mode with pending queue, edit, forward, and drop actions.
 - Sort and filter captured requests for high-volume sessions.
 - ES/EN language support, theme settings, and basic privacy masking.
@@ -78,6 +78,7 @@ open "/Applications/HTTP Request Tracer.app"
 ## Security and trust notes
 
 - HTTPS capture requires trusting the generated local CA in the emulator.
+- The generated CA is shown as `Matecode HTTP Tracer Local CA`; that visible name does not mean Android already trusts it.
 - Apps with TLS pinning can still block interception.
 - Optional ADB override: set `ADB_PATH` to force a specific binary.
 - Common ADB fallback paths:

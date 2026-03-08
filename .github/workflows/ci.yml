@@ -14,7 +14,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  frontend-tests:
     name: Frontend tests (Vitest)
     runs-on: ubuntu-latest
 
@@ -33,3 +33,17 @@ jobs:
 
       - name: Run tests
         run: npm test
+
+  backend-tests:
+    name: Backend tests (Cargo)
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Run cargo tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
