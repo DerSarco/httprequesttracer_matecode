@@ -700,6 +700,12 @@ function App() {
   const requestCountText = `${texts.requestsTitle} (${visibleRequests.length}${
     hasActiveFilters ? ` / ${capturedRequests.length}` : ""
   })`;
+  const configuredRuleCount = interception?.rules.length ?? 0;
+  const activeRuleCount = interception?.rules.filter((rule) => rule.enabled).length ?? 0;
+  const interceptionRulesSummary =
+    configuredRuleCount === 0
+      ? `0 ${texts.requestsRulesConfigured}`
+      : `${activeRuleCount} ${texts.requestsRulesActive} / ${configuredRuleCount} ${texts.requestsRulesConfigured}`;
 
   return (
     <main className={`app-shell font-${preferences.fontScale}`}>
@@ -1019,7 +1025,19 @@ function App() {
       <>
       <section className="panel traffic-panel">
         <div className="traffic-header">
-          <h2>{requestCountText}</h2>
+          <div className="traffic-title-block">
+            <h2>{requestCountText}</h2>
+            <div className="traffic-summary">
+              <span className={`traffic-badge ${interception?.enabled ? "is-on" : "is-off"}`}>
+                <span>{texts.requestsInterceptionLabel}</span>
+                <strong>{interception?.enabled ? texts.requestsInterceptionOn : texts.requestsInterceptionOff}</strong>
+              </span>
+              <span className="traffic-badge">
+                <span>{texts.requestsRulesLabel}</span>
+                <strong>{interceptionRulesSummary}</strong>
+              </span>
+            </div>
+          </div>
           <button onClick={handleClearCapturedRequests} disabled={busy || capturedRequests.length === 0}>
             {texts.clearSession}
           </button>

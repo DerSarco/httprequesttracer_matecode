@@ -195,6 +195,12 @@ export type LocaleTexts = {
   active: string;
   stopped: string;
   requestsTitle: string;
+  requestsInterceptionLabel: string;
+  requestsInterceptionOn: string;
+  requestsInterceptionOff: string;
+  requestsRulesLabel: string;
+  requestsRulesConfigured: string;
+  requestsRulesActive: string;
   workspaceTabRequests: string;
   workspaceTabInterception: string;
   clearSession: string;
@@ -272,4 +278,3 @@ export type LocaleTexts = {
   timeout: string;
   dropped: string;
 };
-
