@@ -191,6 +191,63 @@ beforeEach(() => {
 });
 
 describe("App additional coverage", () => {
+  it("shows interception status and rules count in requests and keeps them in sync", async () => {
+    render(<App />);
+
+    expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
+    expect(screen.getByText("OFF")).toBeInTheDocument();
+    expect(screen.getByText("0 configured")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: /Interception/ }));
+    await userEvent.click(screen.getByRole("button", { name: "Rules" }));
+
+    const rulesDialog = screen.getByRole("dialog", { name: "Rules" });
+    await userEvent.click(within(rulesDialog).getByRole("button", { name: "Add rule" }));
+    await userEvent.type(within(rulesDialog).getByLabelText("Host contains"), " auth.example.com ");
+    await userEvent.click(within(rulesDialog).getByRole("button", { name: "Apply" }));
+
+    await waitFor(() =>
+      expect(lastConfiguredPayload).toEqual({
+        config: {
+          enabled: false,
+          timeoutMs: 12000,
+          rules: [
+            {
+              id: expect.any(String),
+              enabled: true,
+              hostContains: "auth.example.com",
+              pathContains: "",
+              method: "",
+            },
+          ],
+        },
+      }),
+    );
+
+    await userEvent.click(screen.getByLabelText("Interception mode"));
+    await waitFor(() =>
+      expect(lastConfiguredPayload).toEqual({
+        config: {
+          enabled: true,
+          timeoutMs: 12000,
+          rules: [
+            {
+              id: expect.any(String),
+              enabled: true,
+              hostContains: "auth.example.com",
+              pathContains: "",
+              method: "",
+            },
+          ],
+        },
+      }),
+    );
+
+    await userEvent.click(screen.getByRole("button", { name: "Requests" }));
+    expect(screen.getByText("ON")).toBeInTheDocument();
+    expect(screen.getByText("1 active / 1 configured")).toBeInTheDocument();
+  });
+
   it("updates settings and copies request data with sensitive-data handling", async () => {
     currentCapturedRequests = [
       {
