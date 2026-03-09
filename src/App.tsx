@@ -93,6 +93,7 @@ function App() {
   const [exitModalOpen, setExitModalOpen] = useState(false);
   const [exitBusy, setExitBusy] = useState(false);
   const exitBusyRef = useRef(false);
+  const previousPendingIdsRef = useRef<number[]>([]);
 
   const [interceptTimeoutInput, setInterceptTimeoutInput] = useState("12000");
   const [interceptRulesInput, setInterceptRulesInput] = useState<InterceptionRule[]>([]);
@@ -684,6 +685,17 @@ function App() {
   }, [selectedPending?.id]);
 
   useEffect(() => {
+    const pendingIds = pendingIntercepts.map((request) => request.id);
+    const hasNewPendingRequest = pendingIds.some((id) => !previousPendingIdsRef.current.includes(id));
+
+    if (hasNewPendingRequest && activeWorkspaceTab !== "interception") {
+      setActiveWorkspaceTab("interception");
+    }
+
+    previousPendingIdsRef.current = pendingIds;
+  }, [activeWorkspaceTab, pendingIntercepts]);
+
+  useEffect(() => {
     if (!copyFeedback) return;
     const timeout = window.setTimeout(() => setCopyFeedback(null), 2400);
     return () => window.clearTimeout(timeout);
@@ -926,7 +938,15 @@ function App() {
       {activeWorkspaceTab === "interception" && (
       <section className="panel interception-panel">
         <div className="interception-header">
-          <h2>{texts.interceptionTitle}</h2>
+          <div className="interception-title-block">
+            <h2>{texts.interceptionTitle}</h2>
+            <div className="traffic-summary">
+              <span className="traffic-badge">
+                <span>{texts.interceptionRules}</span>
+                <strong>{interceptionRulesSummary}</strong>
+              </span>
+            </div>
+          </div>
           <div className="interception-controls">
             <div className="switch-field">
               <span>{texts.interceptionEnabled}</span>
@@ -1422,7 +1442,12 @@ function App() {
                 disabled={busy || interceptBusy}
               />
             </label>
-            {interceptRulesInput.length === 0 && <p className="muted">{texts.interceptionRulesEmptyHint}</p>}
+            {interceptRulesInput.length === 0 && (
+              <>
+                <p className="muted">{texts.interceptionRulesEmptyHint}</p>
+                <p className="muted">{texts.interceptionRulesAddHint.replace("{action}", texts.addRule)}</p>
+              </>
+            )}
             {interceptRulesInput.length > 0 && (
               <div className="interception-rules">
                 {interceptRulesInput.map((rule) => (

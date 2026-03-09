@@ -8,6 +8,9 @@
   --muted: #5c695d;
   --brand: #1f6d4a;
   --brand-strong: #16573b;
+  --success: #1f8f58;
+  --success-strong: #176d42;
+  --success-rgb: 31, 143, 88;
   --danger: #a73131;
   --warning: #9e6c1d;
   --info: #245d9f;
@@ -31,6 +34,9 @@
   --muted: #b7c7b8;
   --brand: #5eb98e;
   --brand-strong: #409b71;
+  --success: #5fdb95;
+  --success-strong: #9df0bc;
+  --success-rgb: 95, 219, 149;
   --danger: #ff8a8a;
   --warning: #f3c15d;
   --info: #7cb7ff;
@@ -394,6 +400,16 @@ h3 {
   gap: 12px;
 }
 
+.interception-title-block {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.interception-title-block h2 {
+  margin: 0;
+}
+
 .interception-controls {
   display: flex;
   gap: 10px;
@@ -645,6 +661,11 @@ h3 {
   background: var(--surface-alt);
   color: var(--muted);
   font-size: 0.78rem;
+  transition:
+    background 140ms ease,
+    border-color 140ms ease,
+    color 140ms ease,
+    box-shadow 140ms ease;
 }
 
 .traffic-badge strong {
@@ -653,13 +674,24 @@ h3 {
 }
 
 .traffic-badge.is-on {
-  background: rgba(31, 109, 74, 0.1);
-  border-color: rgba(31, 109, 74, 0.28);
-  color: var(--brand);
+  background: rgba(var(--success-rgb), 0.14);
+  border-color: rgba(var(--success-rgb), 0.4);
+  color: var(--success-strong);
+  box-shadow: inset 0 0 0 1px rgba(var(--success-rgb), 0.16);
 }
 
 .traffic-badge.is-on strong {
-  color: var(--brand);
+  color: var(--success-strong);
+}
+
+.traffic-badge.is-on::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--success);
+  box-shadow: 0 0 0 4px rgba(var(--success-rgb), 0.18);
+  flex: none;
 }
 
 .filters-row {

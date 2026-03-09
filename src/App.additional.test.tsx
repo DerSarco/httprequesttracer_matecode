@@ -195,13 +195,15 @@ describe("App additional coverage", () => {
     render(<App />);
 
     expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
-    expect(screen.getByText("OFF")).toBeInTheDocument();
+    expect(screen.getByText("OFF").closest(".traffic-badge")).toHaveClass("is-off");
     expect(screen.getByText("0 configured")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: /Interception/ }));
     await userEvent.click(screen.getByRole("button", { name: "Rules" }));
 
     const rulesDialog = screen.getByRole("dialog", { name: "Rules" });
+    expect(within(rulesDialog).getByText("No active rules: intercept everything.")).toBeInTheDocument();
+    expect(within(rulesDialog).getByText('Add your first one from "Add rule" to start filtering.')).toBeInTheDocument();
     await userEvent.click(within(rulesDialog).getByRole("button", { name: "Add rule" }));
     await userEvent.type(within(rulesDialog).getByLabelText("Host contains"), " auth.example.com ");
     await userEvent.click(within(rulesDialog).getByRole("button", { name: "Apply" }));
@@ -243,8 +245,9 @@ describe("App additional coverage", () => {
       }),
     );
 
+    expect(screen.getByText("1 active / 1 configured")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Requests" }));
-    expect(screen.getByText("ON")).toBeInTheDocument();
+    expect(screen.getByText("ON").closest(".traffic-badge")).toHaveClass("is-on");
     expect(screen.getByText("1 active / 1 configured")).toBeInTheDocument();
   });
 
@@ -341,8 +344,7 @@ describe("App additional coverage", () => {
     render(<App />);
 
     expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: /Interception/ }));
-
+    await waitFor(() => expect(screen.getByRole("button", { name: /Interception/ })).toHaveClass("active"));
     expect(screen.getByText("auth.example.com/login?next=%2Fhome")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Rules" }));
     const rulesDialog = screen.getByRole("dialog", { name: "Rules" });

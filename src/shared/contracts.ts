@@ -260,6 +260,7 @@ export type LocaleTexts = {
   interceptionRuleEnabled: string;
   interceptionRules: string;
   interceptionRulesEmptyHint: string;
+  interceptionRulesAddHint: string;
   manageRules: string;
   close: string;
   addRule: string;
