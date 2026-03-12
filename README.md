@@ -6,7 +6,7 @@ Built with Tauri + Rust + React, and co-developed with OpenAI Codex.
 
 [![Donate with PayPal](https://img.shields.io/badge/Donate-PayPal-00457C?style=for-the-badge&logo=paypal&logoColor=white)](https://www.paypal.com/donate/?hosted_button_id=LU5E9BD7QFYGU)
 
-Donations are optional. If you want to support the project, contributions help cover the Apple Developer Program and app signing costs.
+Donations are optional. If you want to support the project, contributions help pay for the Apple Developer Program so the app can be properly signed and distributed on macOS.
 
 ## Why this project exists
 
