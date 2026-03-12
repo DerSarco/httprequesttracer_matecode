@@ -433,12 +433,19 @@ describe("App additional coverage", () => {
     expect(screen.getByRole("dialog", { name: "Before exit" })).toBeInTheDocument();
   });
 
-  it("opens the donation link without interrupting the main flow", async () => {
+  it("shows the donation explainer and lets the user cancel without leaving the app", async () => {
     render(<App />);
 
     expect(await screen.findByText("Status updated.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Donate" }));
+    expect(openUrl).not.toHaveBeenCalled();
 
-    expect(openUrl).toHaveBeenCalledTimes(1);
+    const dialog = screen.getByRole("dialog", { name: "Before opening PayPal" });
+    expect(within(dialog).getByText("Donating is completely optional. If you want to support the project, we will open PayPal in your browser.")).toBeInTheDocument();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Before opening PayPal" })).not.toBeInTheDocument();
   });
 });

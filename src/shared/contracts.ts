@@ -169,6 +169,10 @@ export type LocaleTexts = {
   startTracing: string;
   stopTracing: string;
   operationStatus: string;
+  statusDetailsTitle: string;
+  statusDetailsSummary: string;
+  statusDetailsShow: string;
+  statusDetailsHide: string;
   yes: string;
   no: string;
   adbMissing: string;
@@ -242,6 +246,11 @@ export type LocaleTexts = {
   copied: string;
   copyFailed: string;
   donationOpenFailed: string;
+  donationDialogTitle: string;
+  donationDialogBody: string;
+  donationDialogFundingNote: string;
+  donationDialogCancel: string;
+  donationDialogConfirm: string;
   copyUrl: string;
   exportCurl: string;
   requestTab: string;

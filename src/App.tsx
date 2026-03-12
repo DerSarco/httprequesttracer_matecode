@@ -65,6 +65,25 @@ function applyTextTemplate(template: string, replacements: Record<string, string
   );
 }
 
+function PayPalIcon() {
+  return (
+    <svg
+      viewBox="0 0 28 20"
+      className="paypal-icon"
+      aria-hidden="true"
+      focusable="false"
+      data-testid="paypal-icon"
+    >
+      <text x="3" y="15" fill="#003087" fontSize="15" fontWeight="800" fontFamily="Avenir Next, Segoe UI, sans-serif">
+        P
+      </text>
+      <text x="11" y="15" fill="#009cde" fontSize="15" fontWeight="800" fontFamily="Avenir Next, Segoe UI, sans-serif">
+        P
+      </text>
+    </svg>
+  );
+}
+
 function App() {
   const [preferences, setPreferences] = useState<UserPreferences>(() => loadPreferences());
   const [settingsOpen, setSettingsOpen] = useState(false);
@@ -99,6 +118,9 @@ function App() {
   const [rulesModalOpen, setRulesModalOpen] = useState(false);
   const [certInstallModalOpen, setCertInstallModalOpen] = useState(false);
   const [exitModalOpen, setExitModalOpen] = useState(false);
+  const [statusDetailsOpen, setStatusDetailsOpen] = useState(false);
+  const [donationModalOpen, setDonationModalOpen] = useState(false);
+  const [donationBusy, setDonationBusy] = useState(false);
   const [exitBusy, setExitBusy] = useState(false);
   const exitBusyRef = useRef(false);
   const previousPendingIdsRef = useRef<number[]>([]);
@@ -535,12 +557,29 @@ function App() {
     }
   }
 
-  async function handleOpenDonationLink() {
+  function handleOpenDonationLink() {
     setErrorText(null);
+    setDonationModalOpen(true);
+  }
+
+  function handleCancelDonation() {
+    if (donationBusy) return;
+    setDonationModalOpen(false);
+  }
+
+  async function handleConfirmDonation() {
+    if (donationBusy) return;
+
+    setDonationBusy(true);
+    setErrorText(null);
+
     try {
       await openUrl(DONATION_URL);
+      setDonationModalOpen(false);
     } catch {
       setErrorText(texts.donationOpenFailed);
+    } finally {
+      setDonationBusy(false);
     }
   }
 
@@ -740,6 +779,14 @@ function App() {
     configuredRuleCount === 0
       ? `0 ${texts.requestsRulesConfigured}`
       : `${activeRuleCount} ${texts.requestsRulesActive} / ${configuredRuleCount} ${texts.requestsRulesConfigured}`;
+  const statusSummaryText = applyTextTemplate(texts.statusDetailsSummary, {
+    adbLabel: texts.adbAvailable,
+    adbValue: adbStatus?.adbAvailable ? texts.yes : texts.no,
+    emulatorsLabel: texts.emulatorsConnected,
+    emulatorsCount: String(emulatorOptions.length),
+    sessionLabel: texts.state,
+    sessionValue: session?.active ? texts.active : texts.stopped,
+  });
 
   return (
     <main className={`app-shell font-${preferences.fontScale}`}>
@@ -751,8 +798,9 @@ function App() {
             <p className="subhead">{texts.headerSubhead}</p>
           </div>
           <div className="header-actions">
-            <button type="button" className="donation-button" onClick={() => void handleOpenDonationLink()}>
-              {texts.donate}
+            <button type="button" className="donation-button" onClick={handleOpenDonationLink}>
+              <PayPalIcon />
+              <span>{texts.donate}</span>
             </button>
             <button type="button" onClick={() => setSettingsOpen((current) => !current)}>
               {texts.settings}
@@ -894,54 +942,72 @@ function App() {
         </div>
       </section>
 
-      <section className="panel-grid">
-        <article className="panel">
-          <h2>{texts.adbPanel}</h2>
-          <ul className="metrics">
-            <li>
-              <span>{texts.adbAvailable}</span>
-              <strong>{adbStatus?.adbAvailable ? texts.yes : texts.no}</strong>
-            </li>
-            <li>
-              <span>{texts.adbVersion}</span>
-              <strong>{adbStatus?.adbVersion ?? "-"}</strong>
-            </li>
-            <li>
-              <span>{texts.adbPath}</span>
-              <strong className="mono">{adbStatus?.adbPath ?? "-"}</strong>
-            </li>
-            <li>
-              <span>{texts.emulatorsConnected}</span>
-              <strong>{emulatorOptions.length}</strong>
-            </li>
-          </ul>
-        </article>
+      <section className="panel status-overview-panel">
+        <div className="status-overview-header">
+          <div className="status-overview-copy">
+            <h2>{texts.statusDetailsTitle}</h2>
+            <p className="status-summary">{statusSummaryText}</p>
+          </div>
+          <button
+            type="button"
+            aria-expanded={statusDetailsOpen}
+            onClick={() => setStatusDetailsOpen((current) => !current)}
+          >
+            {statusDetailsOpen ? texts.statusDetailsHide : texts.statusDetailsShow}
+          </button>
+        </div>
 
-        <article className="panel">
-          <h2>{texts.sessionPanel}</h2>
-          <ul className="metrics">
-            <li>
-              <span>{texts.state}</span>
-              <strong>{session?.active ? texts.active : texts.stopped}</strong>
-            </li>
-            <li>
-              <span>{texts.activeEmulator}</span>
-              <strong>{session?.emulatorSerial ?? "-"}</strong>
-            </li>
-            <li>
-              <span>{texts.proxyApplied}</span>
-              <strong>{session?.proxyAddress ?? "-"}</strong>
-            </li>
-            <li>
-              <span>{texts.localCa}</span>
-              <strong className="mono">{session?.caCertificatePath ?? "-"}</strong>
-            </li>
-            <li>
-              <span>{texts.startedAt}</span>
-              <strong>{formatStartTime(session?.startedAtUnixMs ?? null)}</strong>
-            </li>
-          </ul>
-        </article>
+        {statusDetailsOpen && (
+          <div className="status-details-grid">
+            <article className="status-detail-card">
+              <h3>{texts.adbPanel}</h3>
+              <ul className="metrics">
+                <li>
+                  <span>{texts.adbAvailable}</span>
+                  <strong>{adbStatus?.adbAvailable ? texts.yes : texts.no}</strong>
+                </li>
+                <li>
+                  <span>{texts.adbVersion}</span>
+                  <strong>{adbStatus?.adbVersion ?? "-"}</strong>
+                </li>
+                <li>
+                  <span>{texts.adbPath}</span>
+                  <strong className="mono">{adbStatus?.adbPath ?? "-"}</strong>
+                </li>
+                <li>
+                  <span>{texts.emulatorsConnected}</span>
+                  <strong>{emulatorOptions.length}</strong>
+                </li>
+              </ul>
+            </article>
+
+            <article className="status-detail-card">
+              <h3>{texts.sessionPanel}</h3>
+              <ul className="metrics">
+                <li>
+                  <span>{texts.state}</span>
+                  <strong>{session?.active ? texts.active : texts.stopped}</strong>
+                </li>
+                <li>
+                  <span>{texts.activeEmulator}</span>
+                  <strong>{session?.emulatorSerial ?? "-"}</strong>
+                </li>
+                <li>
+                  <span>{texts.proxyApplied}</span>
+                  <strong>{session?.proxyAddress ?? "-"}</strong>
+                </li>
+                <li>
+                  <span>{texts.localCa}</span>
+                  <strong className="mono">{session?.caCertificatePath ?? "-"}</strong>
+                </li>
+                <li>
+                  <span>{texts.startedAt}</span>
+                  <strong>{formatStartTime(session?.startedAtUnixMs ?? null)}</strong>
+                </li>
+              </ul>
+            </article>
+          </div>
+        )}
       </section>
 
       <section className="panel workspace-tabs-panel">
@@ -1368,6 +1434,47 @@ function App() {
         )}
       </section>
       </>
+      )}
+
+      {donationModalOpen && (
+        <div className="modal-backdrop" onClick={handleCancelDonation}>
+          <section
+            className="modal-panel donation-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-label={texts.donationDialogTitle}
+            onClick={(event) => event.stopPropagation()}
+          >
+            <div className="modal-header">
+              <div className="donation-modal-title">
+                <span className="paypal-badge">
+                  <PayPalIcon />
+                </span>
+                <h3>{texts.donationDialogTitle}</h3>
+              </div>
+              <button type="button" onClick={handleCancelDonation} disabled={donationBusy}>
+                {texts.close}
+              </button>
+            </div>
+            <p>{texts.donationDialogBody}</p>
+            <section className="detail-block">
+              <p>{texts.donationDialogFundingNote}</p>
+            </section>
+            <div className="actions modal-actions">
+              <button type="button" onClick={handleCancelDonation} disabled={donationBusy}>
+                {texts.donationDialogCancel}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                onClick={() => void handleConfirmDonation()}
+                disabled={donationBusy}
+              >
+                {texts.donationDialogConfirm}
+              </button>
+            </div>
+          </section>
+        </div>
       )}
 
       {exitModalOpen && (

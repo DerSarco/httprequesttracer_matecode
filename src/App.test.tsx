@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App, { formatRequestTimestamp, formatStartTime, toUserError } from "./App";
 import { invoke } from "@tauri-apps/api/core";
@@ -154,6 +154,22 @@ describe("App", () => {
     expect(stopButton).toBeDisabled();
   });
 
+  it("keeps environment details collapsed until the user asks for them", async () => {
+    render(<App />);
+
+    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
+    expect(screen.getByText("Environment and session details")).toBeInTheDocument();
+    expect(screen.queryByText("ADB & Emulators")).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "View details" }));
+
+    expect(screen.getByText("ADB & Emulators")).toBeInTheDocument();
+    expect(screen.getByText("Tracing session")).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole("button", { name: "Hide details" }));
+    expect(screen.queryByText("ADB & Emulators")).not.toBeInTheDocument();
+  });
+
   it("renders captured request details when data exists", async () => {
     currentCapturedRequests = [
       {
@@ -275,6 +291,14 @@ describe("App", () => {
 
     expect(await screen.findByText("Status updated.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Donate" }));
+    expect(openUrl).not.toHaveBeenCalled();
+
+    const dialog = screen.getByRole("dialog", { name: "Before opening PayPal" });
+    expect(within(dialog).getByText("Donating is completely optional. If you want to support the project, we will open PayPal in your browser.")).toBeInTheDocument();
+    expect(within(dialog).getByText("Your contribution helps cover the Apple Developer Program and move toward a signed macOS app.")).toBeInTheDocument();
+    expect(screen.getAllByTestId("paypal-icon")).toHaveLength(2);
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Continue to PayPal" }));
 
     expect(openUrl).toHaveBeenCalledWith(DONATION_URL);
   });
