@@ -2,6 +2,7 @@ import type {
   CapturedExchange,
   HeaderEntry,
   InterceptionRule,
+  Language,
 } from "../contracts";
 
 const SENSITIVE_HEADERS = new Set([
@@ -27,27 +28,41 @@ export function formatRequestTimestamp(unixMs: number): string {
   });
 }
 
-export function toUserError(error: unknown): string {
+export function toUserError(error: unknown, language: Language = "es"): string {
   const raw = String(error ?? "").replace(/^Error:\s*/i, "").trim();
-  if (!raw) return "Ocurrió un error inesperado.";
+  if (!raw) {
+    return language === "en" ? "An unexpected error occurred." : "Ocurrió un error inesperado.";
+  }
 
   if (raw.includes("adb not found")) {
-    return "No se encontró adb. Instala Android platform-tools o define ADB_PATH con la ruta del binario.";
+    return language === "en"
+      ? "adb was not found. Install Android platform-tools or set ADB_PATH to the binary path."
+      : "No se encontró adb. Instala Android platform-tools o define ADB_PATH con la ruta del binario.";
   }
   if (raw.includes("offline")) {
-    return `${raw} Sugerencia: ejecuta \`adb reconnect offline\` y espera a que el emulador aparezca como \`device\`.`;
+    return language === "en"
+      ? `${raw} Suggestion: run \`adb reconnect offline\` and wait until the emulator appears as \`device\`.`
+      : `${raw} Sugerencia: ejecuta \`adb reconnect offline\` y espera a que el emulador aparezca como \`device\`.`;
   }
   if (raw.includes("Failed to bind local proxy") || raw.includes("address already in use")) {
-    return `${raw} Sugerencia: cambia el puerto de proxy en la UI y vuelve a intentar.`;
+    return language === "en"
+      ? `${raw} Suggestion: change the proxy port in the UI and try again.`
+      : `${raw} Sugerencia: cambia el puerto de proxy en la UI y vuelve a intentar.`;
   }
   if (raw.includes("cannot connect to daemon")) {
-    return `${raw} Sugerencia: ejecuta \`adb start-server\` y luego Refresh.`;
+    return language === "en"
+      ? `${raw} Suggestion: run \`adb start-server\` and then Refresh.`
+      : `${raw} Sugerencia: ejecuta \`adb start-server\` y luego Refresh.`;
   }
   if (raw.includes("adb root failed")) {
-    return `${raw} Sugerencia: usa un AVD debug/userdebug (no Play image) o completa la instalacion manual desde Settings.`;
+    return language === "en"
+      ? `${raw} Suggestion: use a debug/userdebug AVD (not a Play image) or complete the manual install from Settings.`
+      : `${raw} Sugerencia: usa un AVD debug/userdebug (no Play image) o completa la instalacion manual desde Settings.`;
   }
   if (raw.includes("adb remount failed")) {
-    return `${raw} Sugerencia: el emulador no permite montar /system en escritura; usa instalacion manual o un AVD con root.`;
+    return language === "en"
+      ? `${raw} Suggestion: the emulator cannot mount /system as writable; use manual install or a rooted AVD.`
+      : `${raw} Sugerencia: el emulador no permite montar /system en escritura; usa instalacion manual o un AVD con root.`;
   }
 
   return raw;

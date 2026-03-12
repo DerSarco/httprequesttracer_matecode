@@ -2,6 +2,7 @@ import { act, fireEvent, render, screen, waitFor, within } from "@testing-librar
 import userEvent from "@testing-library/user-event";
 import App from "./App";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 type InvokeMock = typeof invoke & { mockImplementation: (fn: (cmd: string, payload?: unknown) => Promise<unknown>) => void };
@@ -13,6 +14,10 @@ let closeRequestedHandler:
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: vi.fn(),
 }));
 
 vi.mock("@tauri-apps/api/event", () => ({
@@ -122,6 +127,7 @@ beforeEach(() => {
   lastConfiguredPayload = null;
   lastDecisionPayload = null;
   confirmExitCalls = 0;
+  vi.mocked(openUrl).mockResolvedValue(undefined);
 
   currentCapturedRequests = [];
   currentInterception = {
@@ -194,7 +200,7 @@ describe("App additional coverage", () => {
   it("shows interception status and rules count in requests and keeps them in sync", async () => {
     render(<App />);
 
-    expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
+    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
     expect(screen.getByText("OFF").closest(".traffic-badge")).toHaveClass("is-off");
     expect(screen.getByText("0 configured")).toBeInTheDocument();
 
@@ -276,7 +282,7 @@ describe("App additional coverage", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
+    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("row", { name: /api\.example\.com \/login 200 85 ms/i }));
 
     await userEvent.click(screen.getByRole("button", { name: "Headers" }));
@@ -302,14 +308,14 @@ describe("App additional coverage", () => {
   it("runs the certificate install flow and records follow-up details", async () => {
     render(<App />);
 
-    expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
+    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Prepare CA Install" }));
 
     expect(screen.getByRole("dialog", { name: "Certificate install permissions" })).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Continue" }));
 
-    expect(await screen.findByText("Certificado copiado. Completa la confirmacion en el emulador.")).toBeInTheDocument();
-    expect(screen.getByText(/Certificate copied Verificacion:/)).toBeInTheDocument();
+    expect(await screen.findByText("Certificate copied. Complete the confirmation on the emulator.")).toBeInTheDocument();
+    expect(screen.getByText(/Certificate copied Verification:/)).toBeInTheDocument();
 
     const persistedPreferences = JSON.parse(localStorage.getItem("http-request-tracer.preferences.v1") ?? "{}");
     expect(persistedPreferences.certTrusted).toBe(false);
@@ -343,7 +349,7 @@ describe("App additional coverage", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
+    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
     await waitFor(() => expect(screen.getByRole("button", { name: /Interception/ })).toHaveClass("active"));
     expect(screen.getByText("auth.example.com/login?next=%2Fhome")).toBeInTheDocument();
     await userEvent.click(screen.getByRole("button", { name: "Rules" }));
@@ -402,13 +408,13 @@ describe("App additional coverage", () => {
         },
       }),
     );
-    expect(await screen.findByText("Request interceptada reenviada.")).toBeInTheDocument();
+    expect(await screen.findByText("Intercepted request forwarded.")).toBeInTheDocument();
   });
 
   it("opens the exit modal from the Tauri events and confirms exit cleanup", async () => {
     render(<App />);
 
-    expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
+    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
 
     await act(async () => {
       await exitRequestedHandler?.();
@@ -425,5 +431,21 @@ describe("App additional coverage", () => {
       await closeRequestedHandler?.({ preventDefault: vi.fn() });
     });
     expect(screen.getByRole("dialog", { name: "Before exit" })).toBeInTheDocument();
+  });
+
+  it("shows the donation explainer and lets the user cancel without leaving the app", async () => {
+    render(<App />);
+
+    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Donate" }));
+    expect(openUrl).not.toHaveBeenCalled();
+
+    const dialog = screen.getByRole("dialog", { name: "Before opening PayPal" });
+    expect(within(dialog).getByText("Donating is completely optional. If you want to support the project, we will open PayPal in your browser.")).toBeInTheDocument();
+
+    await userEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+
+    expect(openUrl).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Before opening PayPal" })).not.toBeInTheDocument();
   });
 });

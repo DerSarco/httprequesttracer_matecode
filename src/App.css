@@ -105,6 +105,13 @@ body {
   gap: 14px;
 }
 
+.header-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 10px;
+}
+
 .app-header h1 {
   margin: 6px 0 12px;
   font-size: 2.2rem;
@@ -125,6 +132,26 @@ body {
   margin: 0;
   color: var(--muted);
   max-width: 920px;
+}
+
+.donation-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(135deg, rgba(158, 108, 29, 0.14), rgba(var(--success-rgb), 0.12));
+  border-color: rgba(158, 108, 29, 0.28);
+  color: var(--brand-strong);
+}
+
+.paypal-icon {
+  width: 24px;
+  height: 16px;
+  flex: none;
+}
+
+.donation-button:hover:not(:disabled) {
+  border-color: rgba(158, 108, 29, 0.42);
+  background: linear-gradient(135deg, rgba(158, 108, 29, 0.2), rgba(var(--success-rgb), 0.16));
 }
 
 .panel {
@@ -305,6 +332,50 @@ button.danger {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 18px;
+}
+
+.status-overview-panel {
+  padding: 16px 18px;
+}
+
+.status-overview-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.status-overview-copy {
+  min-width: 0;
+}
+
+.status-overview-copy h2 {
+  margin-bottom: 6px;
+}
+
+.status-summary {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.86rem;
+  line-height: 1.45;
+}
+
+.status-details-grid {
+  margin-top: 14px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.status-detail-card {
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-alt);
+  padding: 16px;
+}
+
+.status-detail-card h3 {
+  margin-bottom: 10px;
 }
 
 h2 {
@@ -551,6 +622,29 @@ h3 {
   align-items: center;
   justify-content: space-between;
   gap: 10px;
+}
+
+.donation-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.paypal-badge {
+  width: 38px;
+  height: 38px;
+  border-radius: 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(0, 48, 135, 0.1), rgba(0, 156, 222, 0.18));
+  border: 1px solid rgba(0, 48, 135, 0.18);
+  flex: none;
+}
+
+.donation-modal .detail-block p {
+  margin: 0;
 }
 
 .modal-timeout-field {
@@ -1023,6 +1117,7 @@ td.empty {
 
 @media (max-width: 1100px) {
   .panel-grid,
+  .status-details-grid,
   .interception-grid {
     grid-template-columns: 1fr;
   }
@@ -1041,10 +1136,16 @@ td.empty {
   }
 
   .header-row,
+  .status-overview-header,
   .traffic-header,
   .interception-header,
   .detail-title-row {
     flex-direction: column;
+  }
+
+  .header-actions {
+    width: 100%;
+    justify-content: flex-start;
   }
 
   .detail-meta-actions,
