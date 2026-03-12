@@ -2,12 +2,18 @@ import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import App, { formatRequestTimestamp, formatStartTime, toUserError } from "./App";
 import { invoke } from "@tauri-apps/api/core";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { DONATION_URL } from "./shared/config";
 
 type InvokeMock = typeof invoke & { mockImplementation: (fn: (cmd: string) => Promise<unknown>) => void };
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(),
+}));
+
+vi.mock("@tauri-apps/plugin-opener", () => ({
+  openUrl: vi.fn(),
 }));
 
 const adbStatus = {
@@ -68,6 +74,7 @@ beforeEach(() => {
   );
 
   currentCapturedRequests = [];
+  vi.mocked(openUrl).mockResolvedValue(undefined);
   invokeMock.mockImplementation(async (cmd: string) => {
     switch (cmd) {
       case "get_adb_status":
@@ -114,6 +121,7 @@ describe("utility helpers", () => {
 
   it("normalizes errors for users", () => {
     expect(toUserError(null)).toBe("Ocurrió un error inesperado.");
+    expect(toUserError(null, "en")).toBe("An unexpected error occurred.");
     expect(toUserError(new Error("adb not found"))).toContain("No se encontró adb");
     expect(toUserError(new Error("offline"))).toContain("adb reconnect offline");
     expect(toUserError(new Error("Failed to bind local proxy"))).toContain("cambia el puerto de proxy");
@@ -126,7 +134,7 @@ describe("App", () => {
   it("loads ADB/session data and enables tracing actions", async () => {
     render(<App />);
 
-    expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
+    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
     expect(screen.getByRole("columnheader", { name: "Timestamp" })).toBeInTheDocument();
 
     const startButton = screen.getByRole("button", { name: "Start Tracing" });
@@ -136,12 +144,12 @@ describe("App", () => {
     expect(stopButton).toBeDisabled();
 
     await userEvent.click(startButton);
-    expect(await screen.findByText("Tracing iniciado. Proxy local y MITM activos.")).toBeInTheDocument();
+    expect(await screen.findByText("Tracing started. Local proxy and MITM are active.")).toBeInTheDocument();
     expect(startButton).toBeDisabled();
     expect(stopButton).toBeEnabled();
 
     await userEvent.click(stopButton);
-    expect(await screen.findByText("Tracing detenido. Proxy removido del emulador.")).toBeInTheDocument();
+    expect(await screen.findByText("Tracing stopped. Emulator proxy was cleared.")).toBeInTheDocument();
     expect(startButton).toBeEnabled();
     expect(stopButton).toBeDisabled();
   });
@@ -168,7 +176,7 @@ describe("App", () => {
 
     render(<App />);
 
-    expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
+    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
     expect(await screen.findByText("https://example.com/api")).toBeInTheDocument();
     expect(screen.getByText("{\"hello\":\"world\"}")).toBeInTheDocument();
 
@@ -214,16 +222,16 @@ describe("App", () => {
     ];
 
     render(<App />);
-    expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
+    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
     expect(screen.getByText("example.com")).toBeInTheDocument();
     expect(screen.getByText("auth.example.com")).toBeInTheDocument();
 
-    await userEvent.type(screen.getByLabelText("Filtro texto host/path"), "auth");
+    await userEvent.type(screen.getByLabelText("Host/path text filter"), "auth");
     expect(screen.queryByText("example.com")).not.toBeInTheDocument();
     expect(screen.getByText("auth.example.com")).toBeInTheDocument();
 
-    await userEvent.selectOptions(screen.getByLabelText("Filtro metodo HTTP"), "POST");
-    await userEvent.type(screen.getByLabelText("Filtro status code"), "401");
+    await userEvent.selectOptions(screen.getByLabelText("HTTP method filter"), "POST");
+    await userEvent.type(screen.getByLabelText("Status code filter"), "401");
     expect(screen.getByText("auth.example.com")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Clear filters" }));
@@ -252,13 +260,22 @@ describe("App", () => {
     ];
 
     render(<App />);
-    expect(await screen.findByText("Estado actualizado.")).toBeInTheDocument();
+    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
     expect(screen.getByText("clear.example.com")).toBeInTheDocument();
 
     await userEvent.click(screen.getByRole("button", { name: "Clear Session" }));
 
-    expect(await screen.findByText("Sesion de requests limpiada.")).toBeInTheDocument();
+    expect(await screen.findByText("Captured requests session cleared.")).toBeInTheDocument();
     expect(screen.queryByText("clear.example.com")).not.toBeInTheDocument();
     expect(screen.getByText("No traffic captured yet.")).toBeInTheDocument();
+  });
+
+  it("opens the donation link in the external browser", async () => {
+    render(<App />);
+
+    expect(await screen.findByText("Status updated.")).toBeInTheDocument();
+    await userEvent.click(screen.getByRole("button", { name: "Donate" }));
+
+    expect(openUrl).toHaveBeenCalledWith(DONATION_URL);
   });
 });

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import {
   clearCapturedRequests,
   confirmAppExit,
@@ -14,7 +15,7 @@ import {
   startTracing,
   stopTracing,
 } from "./shared/api/tauriClient";
-import { DEFAULT_PROXY_HOST, DEFAULT_PROXY_PORT, DETAIL_TABS, type DetailTab } from "./shared/config";
+import { DEFAULT_PROXY_HOST, DEFAULT_PROXY_PORT, DETAIL_TABS, DONATION_URL, type DetailTab } from "./shared/config";
 import type {
   AdbStatus,
   CapturedExchange,
@@ -56,6 +57,13 @@ import "./App.css";
 
 export { DEFAULT_PROXY_HOST, DEFAULT_PROXY_PORT } from "./shared/config";
 export { formatRequestTimestamp, formatStartTime, toUserError } from "./shared/utils/requestHelpers";
+
+function applyTextTemplate(template: string, replacements: Record<string, string>) {
+  return Object.entries(replacements).reduce(
+    (output, [key, value]) => output.split(`{${key}}`).join(value),
+    template,
+  );
+}
 
 function App() {
   const [preferences, setPreferences] = useState<UserPreferences>(() => loadPreferences());
@@ -299,12 +307,12 @@ function App() {
   async function handleRefresh() {
     setBusy(true);
     setErrorText(null);
-    setInfoText("Actualizando estado...");
+    setInfoText(texts.refreshingStatus);
     try {
       await Promise.all([loadSessionAndAdb(), loadCapturedRequests(), loadInterceptionState()]);
-      setInfoText("Estado actualizado.");
+      setInfoText(texts.refreshedStatus);
     } catch (error) {
-      setErrorText(toUserError(error));
+      setErrorText(toUserError(error, preferences.language));
       setInfoText(null);
     } finally {
       setBusy(false);
@@ -313,13 +321,13 @@ function App() {
 
   async function handleStartTracing() {
     if (!selectedEmulator) {
-      setErrorText("Selecciona un emulador para iniciar tracing.");
+      setErrorText(texts.startTracingSelectionError);
       return;
     }
 
     setBusy(true);
     setErrorText(null);
-    setInfoText("Iniciando tracing...");
+    setInfoText(texts.startingTracingStatus);
 
     try {
       const nextSession = await startTracing({
@@ -328,10 +336,10 @@ function App() {
         proxyPort: Number(proxyPort),
       });
       setSession(nextSession);
-      setInfoText("Tracing iniciado. Proxy local y MITM activos.");
+      setInfoText(texts.tracingStartedStatus);
       await loadInterceptionState();
     } catch (error) {
-      setErrorText(toUserError(error));
+      setErrorText(toUserError(error, preferences.language));
       setInfoText(null);
       await loadSessionAndAdb().catch(() => undefined);
     } finally {
@@ -342,15 +350,15 @@ function App() {
   async function handleStopTracing() {
     setBusy(true);
     setErrorText(null);
-    setInfoText("Deteniendo tracing...");
+    setInfoText(texts.stoppingTracingStatus);
 
     try {
       const nextSession = await stopTracing();
       setSession(nextSession);
-      setInfoText("Tracing detenido. Proxy removido del emulador.");
+      setInfoText(texts.tracingStoppedStatus);
       await loadInterceptionState();
     } catch (error) {
-      setErrorText(toUserError(error));
+      setErrorText(toUserError(error, preferences.language));
       setInfoText(null);
     } finally {
       setBusy(false);
@@ -359,7 +367,7 @@ function App() {
 
   async function handlePrepareCertificate() {
     if (!selectedEmulator) {
-      setErrorText("Selecciona un emulador para preparar el certificado.");
+      setErrorText(texts.certificateSelectionError);
       return;
     }
 
@@ -369,7 +377,7 @@ function App() {
 
   async function runPrepareCertificateInstall() {
     if (!selectedEmulator) {
-      setErrorText("Selecciona un emulador para preparar el certificado.");
+      setErrorText(texts.certificateSelectionError);
       return;
     }
 
@@ -382,18 +390,23 @@ function App() {
     try {
       const result = await prepareCertificateInstall(selectedEmulator);
       setCertInfoText(
-        `${result.instructions} Verificacion: ${result.verificationNote} Archivo local: ${result.certLocalPath}. Archivo en emulador: ${result.certEmulatorPath}.`,
+        applyTextTemplate(texts.certificateInstallDetails, {
+          instructions: result.instructions,
+          verificationNote: result.verificationNote,
+          localPath: result.certLocalPath,
+          emulatorPath: result.certEmulatorPath,
+        }),
       );
       if (result.installationStatus === "pendingUserAction") {
-        setInfoText("Certificado copiado. Completa la confirmacion en el emulador.");
+        setInfoText(texts.certificateCopiedStatus);
         updatePreferences({ certTrusted: false });
       } else {
-        setInfoText("No fue posible preparar la instalacion manual del certificado.");
+        setInfoText(texts.certificatePrepareFailedStatus);
         updatePreferences({ certTrusted: false });
       }
       await loadSessionAndAdb();
     } catch (error) {
-      setErrorText(toUserError(error));
+      setErrorText(toUserError(error, preferences.language));
       setInfoText(null);
     } finally {
       setBusy(false);
@@ -418,7 +431,7 @@ function App() {
       setExitBusy(false);
       setExitModalOpen(false);
       setInfoText(null);
-      setErrorText(toUserError(error));
+      setErrorText(toUserError(error, preferences.language));
     }
   }
 
@@ -429,9 +442,9 @@ function App() {
       await clearCapturedRequests();
       setCapturedRequests([]);
       setSelectedRequestId(null);
-      setInfoText("Sesion de requests limpiada.");
+      setInfoText(texts.sessionClearedStatus);
     } catch (error) {
-      setErrorText(toUserError(error));
+      setErrorText(toUserError(error, preferences.language));
       setInfoText(null);
     } finally {
       setBusy(false);
@@ -483,9 +496,9 @@ function App() {
           id: rule.id || createRuleId(),
         })),
       );
-      setInfoText("Configuracion de interceptacion actualizada.");
+      setInfoText(texts.interceptionUpdatedStatus);
     } catch (error) {
-      setErrorText(toUserError(error));
+      setErrorText(toUserError(error, preferences.language));
     } finally {
       setInterceptBusy(false);
     }
@@ -514,11 +527,20 @@ function App() {
     try {
       const snapshot = await decideInterceptRequest(decision);
       setInterception(snapshot);
-      setInfoText(action === "drop" ? "Request interceptada descartada." : "Request interceptada reenviada.");
+      setInfoText(action === "drop" ? texts.interceptedDroppedStatus : texts.interceptedForwardedStatus);
     } catch (error) {
-      setErrorText(toUserError(error));
+      setErrorText(toUserError(error, preferences.language));
     } finally {
       setInterceptBusy(false);
+    }
+  }
+
+  async function handleOpenDonationLink() {
+    setErrorText(null);
+    try {
+      await openUrl(DONATION_URL);
+    } catch {
+      setErrorText(texts.donationOpenFailed);
     }
   }
 
@@ -728,7 +750,14 @@ function App() {
             <h1>{texts.headerTitle}</h1>
             <p className="subhead">{texts.headerSubhead}</p>
           </div>
-          <button onClick={() => setSettingsOpen((current) => !current)}>{texts.settings}</button>
+          <div className="header-actions">
+            <button type="button" className="donation-button" onClick={() => void handleOpenDonationLink()}>
+              {texts.donate}
+            </button>
+            <button type="button" onClick={() => setSettingsOpen((current) => !current)}>
+              {texts.settings}
+            </button>
+          </div>
         </div>
       </header>
 
@@ -745,8 +774,8 @@ function App() {
                 value={preferences.language}
                 onChange={(event) => updatePreferences({ language: event.target.value as Language })}
               >
-                <option value="es">Espanol</option>
-                <option value="en">English</option>
+                <option value="es">{texts.languageSpanish}</option>
+                <option value="en">{texts.languageEnglish}</option>
               </select>
             </label>
             <label>
@@ -801,7 +830,7 @@ function App() {
               onChange={(event) => setSelectedEmulator(event.target.value)}
               disabled={busy || session?.active}
             >
-              {emulatorOptions.length === 0 && <option value="">Sin emuladores disponibles</option>}
+              {emulatorOptions.length === 0 && <option value="">{texts.noEmulatorsAvailable}</option>}
               {emulatorOptions.map((emulator) => (
                 <option key={emulator.serial} value={emulator.serial}>
                   {emulator.serial}
@@ -871,7 +900,7 @@ function App() {
           <ul className="metrics">
             <li>
               <span>{texts.adbAvailable}</span>
-              <strong>{adbStatus?.adbAvailable ? "Si" : "No"}</strong>
+              <strong>{adbStatus?.adbAvailable ? texts.yes : texts.no}</strong>
             </li>
             <li>
               <span>{texts.adbVersion}</span>
@@ -916,7 +945,7 @@ function App() {
       </section>
 
       <section className="panel workspace-tabs-panel">
-        <nav className="workspace-tabs" aria-label="Main workspace tabs">
+        <nav className="workspace-tabs" aria-label={texts.workspaceTabsAriaLabel}>
           <button
             type="button"
             className={activeWorkspaceTab === "requests" ? "active" : ""}
@@ -1005,7 +1034,7 @@ function App() {
                       <input value={editorMethod} onChange={(event) => setEditorMethod(event.target.value)} />
                     </label>
                     <label>
-                      URL
+                      {texts.url}
                       <input value={editorUrl} onChange={(event) => setEditorUrl(event.target.value)} />
                     </label>
                   </div>
@@ -1068,9 +1097,9 @@ function App() {
             value={searchFilter}
             onChange={(event) => setSearchFilter(event.target.value)}
             placeholder={texts.filterText}
-            aria-label="Filtro texto host/path"
+            aria-label={texts.filterTextAriaLabel}
           />
-          <select value={methodFilter} onChange={(event) => setMethodFilter(event.target.value)} aria-label="Filtro metodo HTTP">
+          <select value={methodFilter} onChange={(event) => setMethodFilter(event.target.value)} aria-label={texts.filterMethodAriaLabel}>
             <option value="all">{texts.allMethods}</option>
             {availableMethods.map((method) => (
               <option key={method} value={method}>
@@ -1082,9 +1111,9 @@ function App() {
             value={statusFilter}
             onChange={(event) => setStatusFilter(event.target.value)}
             placeholder={texts.filterStatus}
-            aria-label="Filtro status code"
+            aria-label={texts.filterStatusAriaLabel}
           />
-          <select value={sortField} onChange={(event) => setSortField(event.target.value as SortField)} aria-label="Sort field">
+          <select value={sortField} onChange={(event) => setSortField(event.target.value as SortField)} aria-label={texts.sortFieldAriaLabel}>
             <option value="id">{texts.sortBy}: {texts.sortById}</option>
             <option value="startedAtUnixMs">{texts.sortBy}: {texts.sortByTime}</option>
           </select>
@@ -1164,7 +1193,7 @@ function App() {
               </div>
             </div>
 
-            <nav className="detail-tabs" aria-label="Request detail tabs">
+            <nav className="detail-tabs" aria-label={texts.detailTabsAriaLabel}>
               {DETAIL_TABS.map((tab) => (
                 <button
                   key={tab}
