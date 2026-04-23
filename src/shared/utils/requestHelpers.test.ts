@@ -4,6 +4,8 @@ import {
   createEmptyRule,
   createRuleId,
   formatByteSize,
+  formatRequestTimestamp,
+  formatStartTime,
   formatHeadersAsText,
   getHeaderValue,
   isSensitiveHeader,
@@ -12,6 +14,7 @@ import {
   parseCookieEntries,
   parseHeaderLines,
   parseParamEntries,
+  toUserError,
 } from "./requestHelpers";
 
 describe("requestHelpers", () => {
@@ -181,5 +184,72 @@ describe("requestHelpers", () => {
       "curl -X POST 'https://example.com/path' -H 'Content-Type: application/json' --data-raw '{\"ok\":true}'",
     );
     expect(buildCurlCommand(request, true)).toContain("-H 'Authorization: Bearer abcdef123456'");
+  });
+
+  it("formats start and request timestamps", () => {
+    expect(formatStartTime(null)).toBe("-");
+    expect(formatStartTime(1700000000000)).toBe(new Date(1700000000000).toLocaleString());
+    expect(formatRequestTimestamp(1700000000000)).toBe(
+      new Date(1700000000000).toLocaleTimeString([], {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+      }),
+    );
+  });
+
+  it("maps known runtime errors to user-facing guidance", () => {
+    expect(toUserError(null)).toBe("Ocurrió un error inesperado.");
+    expect(toUserError(new Error("   "), "en")).toBe("An unexpected error occurred.");
+    expect(toUserError(new Error("Error: adb root failed"), "en")).toContain("debug/userdebug AVD");
+    expect(toUserError(new Error("adb remount failed"))).toContain("instalacion manual");
+    expect(toUserError(new Error("address already in use"), "en")).toContain("change the proxy port");
+  });
+
+  it("keeps query parsing stable when fallback path has no query string", () => {
+    expect(
+      parseParamEntries({
+        id: 3,
+        startedAtUnixMs: 1,
+        durationMs: 20,
+        method: "GET",
+        url: "not a valid url",
+        host: "example.com",
+        path: "/path-without-query",
+        statusCode: 200,
+        requestHeaders: [],
+        responseHeaders: [],
+        requestBody: null,
+        responseBody: null,
+        requestBodySize: 0,
+        responseBodySize: 0,
+      }),
+    ).toEqual([]);
+  });
+
+  it("drops invalid parsed header names and escapes values in curl command", () => {
+    expect(parseHeaderLines("\n: empty-name\nX-Test: 1\n")).toEqual([{ name: "X-Test", value: "1" }]);
+
+    const quotedRequest = {
+      id: 2,
+      startedAtUnixMs: 1,
+      durationMs: 20,
+      method: "post",
+      url: "https://example.com/o'hara",
+      host: "example.com",
+      path: "/o'hara",
+      statusCode: 200,
+      requestHeaders: [{ name: "X-Note", value: "it's fine" }],
+      responseHeaders: [],
+      requestBody: "name=O'Hara",
+      responseBody: null,
+      requestBodySize: 11,
+      responseBodySize: 0,
+    };
+
+    expect(buildCurlCommand(quotedRequest, true)).toBe(
+      "curl -X POST 'https://example.com/o'\"'\"'hara' -H 'X-Note: it'\"'\"'s fine' --data-raw 'name=O'\"'\"'Hara'",
+    );
   });
 });
