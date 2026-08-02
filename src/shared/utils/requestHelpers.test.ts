@@ -12,6 +12,7 @@ import {
   parseCookieEntries,
   parseHeaderLines,
   parseParamEntries,
+  toUserError,
 } from "./requestHelpers";
 
 describe("requestHelpers", () => {
@@ -122,6 +123,21 @@ describe("requestHelpers", () => {
     expect(matchesStatusFilter(503, "5xx")).toBe(true);
     expect(matchesStatusFilter(503, "invalid")).toBe(true);
     expect(matchesStatusFilter(204, "404")).toBe(false);
+  });
+
+  it("adds actionable guidance for certificate installation failures", () => {
+    expect(toUserError(new Error("adb root failed: production build"), "en")).toContain(
+      "use a debug/userdebug AVD",
+    );
+    expect(toUserError("adb root failed: compilación de producción", "es")).toContain(
+      "usa un AVD debug/userdebug",
+    );
+    expect(toUserError("adb remount failed: read-only", "en")).toContain(
+      "cannot mount /system as writable",
+    );
+    expect(toUserError("adb remount failed: solo lectura", "es")).toContain(
+      "no permite montar /system en escritura",
+    );
   });
 
   it("formats headers as text and parses them back", () => {
