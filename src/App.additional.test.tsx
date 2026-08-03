@@ -204,15 +204,17 @@ describe("App additional coverage", () => {
     expect(screen.getByText("OFF").closest(".traffic-badge")).toHaveClass("is-off");
     expect(screen.getByText("0 configured")).toBeInTheDocument();
 
-    await userEvent.click(screen.getByRole("button", { name: /Interception/ }));
-    await userEvent.click(screen.getByRole("button", { name: "Rules" }));
+    fireEvent.click(screen.getByRole("button", { name: /Interception/ }));
+    fireEvent.click(screen.getByRole("button", { name: "Rules" }));
 
     const rulesDialog = screen.getByRole("dialog", { name: "Rules" });
     expect(within(rulesDialog).getByText("No active rules: intercept everything.")).toBeInTheDocument();
     expect(within(rulesDialog).getByText('Add your first one from "Add rule" to start filtering.')).toBeInTheDocument();
-    await userEvent.click(within(rulesDialog).getByRole("button", { name: "Add rule" }));
-    await userEvent.type(within(rulesDialog).getByLabelText("Host contains"), " auth.example.com ");
-    await userEvent.click(within(rulesDialog).getByRole("button", { name: "Apply" }));
+    fireEvent.click(within(rulesDialog).getByRole("button", { name: "Add rule" }));
+    fireEvent.change(within(rulesDialog).getByLabelText("Host contains"), {
+      target: { value: " auth.example.com " },
+    });
+    fireEvent.click(within(rulesDialog).getByRole("button", { name: "Apply" }));
 
     await waitFor(() =>
       expect(lastConfiguredPayload).toEqual({
@@ -232,7 +234,7 @@ describe("App additional coverage", () => {
       }),
     );
 
-    await userEvent.click(screen.getByLabelText("Interception mode"));
+    fireEvent.click(screen.getByLabelText("Interception mode"));
     await waitFor(() =>
       expect(lastConfiguredPayload).toEqual({
         config: {
@@ -252,7 +254,7 @@ describe("App additional coverage", () => {
     );
 
     expect(screen.getByText("1 active / 1 configured")).toBeInTheDocument();
-    await userEvent.click(screen.getByRole("button", { name: "Requests" }));
+    fireEvent.click(screen.getByRole("button", { name: "Requests" }));
     expect(screen.getByText("ON").closest(".traffic-badge")).toHaveClass("is-on");
     expect(screen.getByText("1 active / 1 configured")).toBeInTheDocument();
   });
