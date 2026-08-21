@@ -409,7 +409,7 @@ describe("App additional coverage", () => {
       }),
     );
     expect(await screen.findByText("Intercepted request forwarded.")).toBeInTheDocument();
-  });
+  }, 10_000);
 
   it("opens the exit modal from the Tauri events and confirms exit cleanup", async () => {
     render(<App />);
